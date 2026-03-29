@@ -1,0 +1,21 @@
+{
+  "name": "standup-bot",
+  "version": "1.0.0",
+  "description": "Slack standup bot for engineering teams",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0",
+    "@octokit/rest": "^20.0.0",
+    "@slack/bolt": "^3.17.0",
+    "dotenv": "^16.0.0",
+    "node-cron": "^3.0.0",
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
