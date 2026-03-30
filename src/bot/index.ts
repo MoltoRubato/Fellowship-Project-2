@@ -1,20 +1,6 @@
 import "dotenv/config";
 import { App } from "@slack/bolt";
-import {
-  handleAuth,
-  handleBlocker,
-  handleDelete,
-  handleDeleteModalSubmission,
-  handleDid,
-  handleDirectMessage,
-  handleEditModalSubmission,
-  handleEntrySelectionChange,
-  handleEntryModalSubmission,
-  handleEdit,
-  handleSummaryModalSubmission,
-  handleSummaryRepoPick,
-  handleSummarise,
-} from "@/bot/commands";
+import { registerAllCommands } from "@/bot/commands";
 import { startActivitySyncJob, startReminderJobs } from "@/bot/jobs";
 
 const app = new App({
@@ -24,34 +10,7 @@ const app = new App({
   appToken: process.env.SLACK_APP_TOKEN,
 });
 
-app.command("/did", handleDid);
-app.command("/blocker", handleBlocker);
-app.command("/edit", handleEdit);
-app.command("/delete", handleDelete);
-app.command("/summarise", handleSummarise);
-app.command("/auth", handleAuth);
-app.view("standup_entry_submit", handleEntryModalSubmission);
-app.view("standup_edit_submit", handleEditModalSubmission);
-app.view("standup_delete_submit", handleDeleteModalSubmission);
-app.view("standup_summary_submit", handleSummaryModalSubmission);
-app.action("entry_select_action", handleEntrySelectionChange);
-app.action("summary_repo_pick", handleSummaryRepoPick);
-
-app.message(async ({ message }) => {
-  if (
-    message.channel_type !== "im" ||
-    !("user" in message) ||
-    !("text" in message) ||
-    ("subtype" in message && Boolean(message.subtype)) ||
-    !message.user ||
-    typeof message.text !== "string" ||
-    !message.text.trim()
-  ) {
-    return;
-  }
-
-  await handleDirectMessage(app, message.user, message.text.trim());
-});
+registerAllCommands(app);
 
 async function start() {
   await app.start();
