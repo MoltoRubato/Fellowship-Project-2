@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "start:bot": "tsx src/bot/index.ts",
+    "start:all": "concurrently --names web,bot \"next start\" \"tsx src/bot/index.ts\"",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
