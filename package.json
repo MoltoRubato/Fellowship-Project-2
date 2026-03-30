@@ -8,7 +8,7 @@
     "dev:web": "next dev",
     "dev:bot": "tsx watch src/bot/index.ts",
     "build": "next build",
-    "start": "next start",
+    "start": "concurrently --names web,bot \"next start\" \"tsx src/bot/index.ts\"",
     "start:bot": "tsx src/bot/index.ts",
     "start:all": "concurrently --names web,bot \"next start\" \"tsx src/bot/index.ts\"",
     "db:push": "prisma db push",
