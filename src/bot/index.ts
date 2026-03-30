@@ -4,10 +4,14 @@ import {
   handleAuth,
   handleBlocker,
   handleDelete,
+  handleDeleteModalSubmission,
   handleDid,
   handleDirectMessage,
+  handleEditModalSubmission,
+  handleEntrySelectionChange,
   handleEntryModalSubmission,
   handleEdit,
+  handleSummaryModalSubmission,
   handleSummarise,
 } from "@/bot/commands";
 import { startActivitySyncJob, startReminderJobs } from "@/bot/jobs";
@@ -26,6 +30,10 @@ app.command("/delete", handleDelete);
 app.command("/summarise", handleSummarise);
 app.command("/auth", handleAuth);
 app.view("standup_entry_submit", handleEntryModalSubmission);
+app.view("standup_edit_submit", handleEditModalSubmission);
+app.view("standup_delete_submit", handleDeleteModalSubmission);
+app.view("standup_summary_submit", handleSummaryModalSubmission);
+app.action("entry_select_action", handleEntrySelectionChange);
 
 app.message(async ({ message }) => {
   if (
