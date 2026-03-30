@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const redirectUri = new URL("/api/oauth/linear/callback", request.nextUrl.origin).toString();
+    const baseUrl = process.env.APP_URL ?? request.nextUrl.origin;
+    const redirectUri = new URL("/api/oauth/linear/callback", baseUrl).toString();
     const account = await exchangeLinearCode(code, redirectUri);
     await saveLinearAccount(session.user.id, account);
     await sendAuthChangeDm(session.user.slackUserId, "linear", true);

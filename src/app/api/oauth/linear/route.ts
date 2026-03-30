@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/auth", request.url));
   }
 
-  const redirectUri = new URL("/api/oauth/linear/callback", request.nextUrl.origin).toString();
+  const baseUrl = process.env.APP_URL ?? request.nextUrl.origin;
+  const redirectUri = new URL("/api/oauth/linear/callback", baseUrl).toString();
   const params = new URLSearchParams({
     client_id: process.env.LINEAR_CLIENT_ID ?? "",
     redirect_uri: redirectUri,

@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const redirectUri = new URL("/api/oauth/github/callback", request.nextUrl.origin).toString();
+    const baseUrl = process.env.APP_URL ?? request.nextUrl.origin;
+    const redirectUri = new URL("/api/oauth/github/callback", baseUrl).toString();
     const account = await exchangeGithubCode(code, redirectUri);
     await saveGithubAccount(session.user.id, account);
     await sendAuthChangeDm(session.user.slackUserId, "github", true);
