@@ -62,6 +62,14 @@ type ModalEntryType = "update" | "blocker";
 type SummaryPeriod = "today" | "week";
 
 type RecentManualEntry = Awaited<ReturnType<typeof listRecentManualEntries>>[number];
+type EntryModalItem = {
+  displayId: number;
+  content: string;
+  repoLabel: string;
+};
+
+const ENTRY_MODAL_RECENT_LIMIT = 12;
+const ENTRY_MODAL_METADATA_MAX_CHARS = 2900;
 
 function getProjectTimestamp(value?: Date | null) {
   return value instanceof Date ? value.getTime() : 0;
@@ -96,9 +104,16 @@ function buildProjectOption(project: {
   };
 }
 
-function buildEntryOption(entry: RecentManualEntry) {
-  const repoLabel = entry.project ? formatProjectLabel(entry.project) : "No repo";
-  const text = truncatePlainText(`#${entry.displayId} | ${repoLabel} | ${entry.content}`);
+function toEntryModalItem(entry: RecentManualEntry): EntryModalItem {
+  return {
+    displayId: entry.displayId,
+    content: entry.content,
+    repoLabel: entry.project ? formatProjectLabel(entry.project) : "No repo",
+  };
+}
+
+function buildEntryOption(entry: EntryModalItem) {
+  const text = truncatePlainText(`#${entry.displayId} | ${entry.repoLabel} | ${entry.content}`);
   return {
     text: {
       type: "plain_text" as const,
@@ -108,9 +123,73 @@ function buildEntryOption(entry: RecentManualEntry) {
   };
 }
 
-function buildEntryPreviewText(entry: RecentManualEntry) {
-  const label = entry.project ? formatProjectLabel(entry.project) : "No repo";
-  return `*Selected entry*\n*#${entry.displayId}* • ${label}\n${entry.content}`;
+function buildEntryPreviewText(entry: EntryModalItem) {
+  const quotedContent = entry.content
+    .split("\n")
+    .map((line) => `>${line}`)
+    .join("\n");
+
+  return `*Selected entry*\n*#${entry.displayId}* • ${entry.repoLabel}\n${quotedContent}`;
+}
+
+function sanitizeEntryModalCache(value: unknown): EntryModalItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const candidate = item as {
+        displayId?: unknown;
+        content?: unknown;
+        repoLabel?: unknown;
+      };
+      const displayId = Number(candidate.displayId);
+      const content = typeof candidate.content === "string" ? candidate.content : "";
+      const repoLabel = typeof candidate.repoLabel === "string" ? candidate.repoLabel : "No repo";
+
+      if (!Number.isInteger(displayId) || displayId <= 0 || !content.trim()) {
+        return null;
+      }
+
+      return {
+        displayId,
+        content,
+        repoLabel,
+      };
+    })
+    .filter((item): item is EntryModalItem => Boolean(item));
+}
+
+function buildEntryManagementMetadata(input: {
+  channelId: string;
+  teamId: string;
+  responseUrl?: string;
+  selectedDisplayId: number;
+  entries: EntryModalItem[];
+}) {
+  const baseMetadata = {
+    channelId: input.channelId,
+    teamId: input.teamId,
+    responseUrl: input.responseUrl,
+    selectedDisplayId: input.selectedDisplayId,
+  };
+
+  const withCache = {
+    ...baseMetadata,
+    entryCache: input.entries,
+  };
+  const serialized = JSON.stringify(withCache);
+
+  if (serialized.length <= ENTRY_MODAL_METADATA_MAX_CHARS) {
+    return serialized;
+  }
+
+  return JSON.stringify(baseMetadata);
 }
 
 function sortProjectsForRepoPicker(projects: UserContext["projects"]) {
@@ -631,7 +710,7 @@ async function deliverSummaryOutcome(input: {
       await postToResponseUrl(input.responseUrl, {
         response_type: "ephemeral",
         text: followUpText,
-        replace_original: false,
+        replace_original: true,
       });
       return;
     }
@@ -646,7 +725,7 @@ async function deliverSummaryOutcome(input: {
       await postToResponseUrl(input.responseUrl, {
         response_type: "ephemeral",
         text: fallbackText,
-        replace_original: false,
+        replace_original: true,
       });
       return;
     }
@@ -668,7 +747,7 @@ async function deliverSummaryOutcome(input: {
     await postToResponseUrl(input.responseUrl, {
       response_type: "in_channel",
       text: result.summaryResult.summary,
-      replace_original: false,
+      replace_original: true,
     });
     return;
   }
@@ -865,8 +944,8 @@ function buildEntryManagementModalView(input: {
   channelId: string;
   teamId: string;
   responseUrl?: string;
-  selectedEntry: RecentManualEntry;
-  entries: RecentManualEntry[];
+  selectedEntry: EntryModalItem;
+  entries: EntryModalItem[];
   editText?: string;
 }) {
   const entryOptions = input.entries.map((entry) => buildEntryOption(entry));
@@ -927,11 +1006,12 @@ function buildEntryManagementModalView(input: {
   return {
     type: "modal" as const,
     callback_id: input.callbackId,
-    private_metadata: JSON.stringify({
+    private_metadata: buildEntryManagementMetadata({
       channelId: input.channelId,
       teamId: input.teamId,
       responseUrl: input.responseUrl,
       selectedDisplayId: input.selectedEntry.displayId,
+      entries: input.entries,
     }),
     title: {
       type: "plain_text" as const,
@@ -955,7 +1035,7 @@ async function openEditModal(args: CommandArgs) {
 
   const defaultRepo = (await resolveDefaultRepo(command.user_id)) ?? null;
   const parsed = parseEditArgs(command.text ?? "", defaultRepo);
-  const entries = await listRecentManualEntries(command.user_id, 25);
+  const entries = (await listRecentManualEntries(command.user_id, ENTRY_MODAL_RECENT_LIMIT)).map(toEntryModalItem);
 
   if (!entries.length) {
     await respond({
@@ -988,7 +1068,7 @@ async function openDeleteModal(args: CommandArgs) {
 
   const defaultRepo = (await resolveDefaultRepo(command.user_id)) ?? null;
   const parsed = parseDeleteArgs(command.text ?? "", defaultRepo);
-  const entries = await listRecentManualEntries(command.user_id, 25);
+  const entries = (await listRecentManualEntries(command.user_id, ENTRY_MODAL_RECENT_LIMIT)).map(toEntryModalItem);
 
   if (!entries.length) {
     await respond({
@@ -1097,10 +1177,12 @@ export async function handleEditModalSubmission(args: ViewArgs) {
   const content = resolveEditTextFromModal(view);
 
   if (!content) {
+    const editTextBlockId =
+      Object.keys(view.state.values).find((blockId) => blockId.startsWith(EDIT_TEXT_BLOCK_ID)) ?? EDIT_TEXT_BLOCK_ID;
     await ack({
       response_action: "errors",
       errors: {
-        [EDIT_TEXT_BLOCK_ID]: "Please enter the updated text.",
+        [editTextBlockId]: "Please enter the updated text.",
       },
     });
     return;
@@ -1186,7 +1268,18 @@ export async function handleEntrySelectionChange(args: ActionArgs) {
     return;
   }
 
-  const entries = await listRecentManualEntries(body.user.id, 25);
+  const metadata = JSON.parse(body.view.private_metadata || "{}") as {
+    channelId?: string;
+    teamId?: string;
+    responseUrl?: string;
+    selectedDisplayId?: number;
+    entryCache?: unknown;
+  };
+  const cachedEntries = sanitizeEntryModalCache(metadata.entryCache);
+  const entries =
+    cachedEntries.length > 0
+      ? cachedEntries
+      : (await listRecentManualEntries(body.user.id, ENTRY_MODAL_RECENT_LIMIT)).map(toEntryModalItem);
   if (!entries.length) {
     return;
   }
@@ -1195,12 +1288,6 @@ export async function handleEntrySelectionChange(args: ActionArgs) {
   const selectedDisplayId =
     action && "selected_option" in action ? Number(action.selected_option?.value ?? "") : Number.NaN;
   const nextEntry = entries.find((entry) => entry.displayId === selectedDisplayId) ?? entries[0];
-  const metadata = JSON.parse(body.view.private_metadata || "{}") as {
-    channelId?: string;
-    teamId?: string;
-    responseUrl?: string;
-    selectedDisplayId?: number;
-  };
 
   await client.views.update({
     view_id: body.view.id,
@@ -1258,6 +1345,7 @@ export async function handleSummarise(args: CommandArgs) {
       await respond({
         response_type: "ephemeral",
         text: resolved.text,
+        replace_original: true,
       });
       return;
     }
@@ -1290,6 +1378,7 @@ export async function handleSummarise(args: CommandArgs) {
     await respond({
       response_type: "ephemeral",
       text: resolved.text,
+      replace_original: true,
     });
     return;
   }
@@ -1327,6 +1416,14 @@ export async function handleSummaryModalSubmission(args: ViewArgs) {
       metadata.responseUrl,
     );
     return;
+  }
+
+  if (metadata.responseUrl) {
+    await postToResponseUrl(metadata.responseUrl, {
+      response_type: "ephemeral",
+      text: "⏳ Generating your standup summary...",
+      replace_original: true,
+    });
   }
 
   const resolved = await generateSummaryResult({

@@ -23,18 +23,26 @@ export interface SummaryGenerationResult {
   summary: string | null;
   questions: SummaryQuestion[];
   requestCommits: string[];
+  mode: "ai" | "fallback";
 }
 
 interface ParsedSummaryResponse {
   summary: string | null;
   questions: SummaryQuestion[];
   requestCommits: string[];
+  mode: "ai";
 }
 
 interface CommitPromptItem {
   commit_message: string;
   authors: string[];
   commit_id: string;
+}
+
+interface TaskPromptItem {
+  task: string;
+  status_hint: "completed" | "in_progress" | "unknown";
+  source: "manual" | "dm" | "github_pr" | "linear_issue";
 }
 
 const IN_PROGRESS_KEYWORDS = [
@@ -48,24 +56,45 @@ const IN_PROGRESS_KEYWORDS = [
   "follow up",
   "todo",
 ];
+const LOW_SIGNAL_TASK_PATTERN = /^(hi|hello|hey|yo|sup|test|testing)$/i;
+const COMPLETED_HINT_PATTERN =
+  /\b(done|finished|completed|fixed|added|implemented|shipped|merged|resolved|polished|reviewed)\b/i;
 
 export function getSummaryWindow(period: SummaryPeriod) {
   if (period === "week") {
     const now = new Date();
-    now.setUTCHours(0, 0, 0, 0);
-    const day = now.getUTCDay();
+    now.setHours(0, 0, 0, 0);
+    const day = now.getDay();
     const diff = day === 0 ? -6 : 1 - day;
-    now.setUTCDate(now.getUTCDate() + diff);
+    now.setDate(now.getDate() + diff);
     return now;
   }
 
   const now = new Date();
-  now.setUTCHours(0, 0, 0, 0);
+  now.setHours(0, 0, 0, 0);
   return now;
 }
 
-function dedupeLines(lines: string[]) {
-  return [...new Set(lines.map((line) => line.trim()).filter(Boolean))];
+function dedupeOrderedLines(lines: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const key = trimmed.toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(trimmed);
+  }
+
+  return result;
 }
 
 function cleanYamlPayload(text: string) {
@@ -79,6 +108,18 @@ function cleanYamlPayload(text: string) {
 function looksInProgress(text: string) {
   const lower = text.toLowerCase();
   return IN_PROGRESS_KEYWORDS.some((keyword) => lower.includes(keyword));
+}
+
+function getTaskStatusHint(text: string): TaskPromptItem["status_hint"] {
+  if (COMPLETED_HINT_PATTERN.test(text)) {
+    return "completed";
+  }
+
+  if (looksInProgress(text)) {
+    return "in_progress";
+  }
+
+  return "unknown";
 }
 
 function truncateLine(text: string, max = 100) {
@@ -132,26 +173,55 @@ function buildCommitPromptItems(commitDetails: GithubCommitDetail[]): CommitProm
 }
 
 function buildTaskItems(entries: SummaryLogEntry[]) {
-  return entries
-    .filter((entry) => entry.source !== EntrySource.github_commit && entry.entryType !== "blocker")
-    .map((entry) => {
-      if (entry.source === EntrySource.github_pr) {
-        return `GitHub PR: ${entry.title ?? entry.content}`;
-      }
+  const seen = new Set<string>();
+  const tasks: TaskPromptItem[] = [];
 
-      if (entry.source === EntrySource.linear_issue) {
-        return `Linear: ${entry.title ?? entry.content}`;
-      }
+  for (const entry of entries) {
+    if (entry.source === EntrySource.github_commit || entry.entryType === "blocker") {
+      continue;
+    }
 
-      return entry.content;
+    const task =
+      entry.source === EntrySource.github_pr
+        ? `GitHub PR: ${entry.title ?? entry.content}`
+        : entry.source === EntrySource.linear_issue
+          ? `Linear: ${entry.title ?? entry.content}`
+          : entry.content;
+
+    if (LOW_SIGNAL_TASK_PATTERN.test(task.trim())) {
+      continue;
+    }
+
+    const key = task.trim().toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    tasks.push({
+      task,
+      status_hint: getTaskStatusHint(task),
+      source:
+        entry.source === EntrySource.dm
+          ? "dm"
+          : entry.source === EntrySource.github_pr
+            ? "github_pr"
+            : entry.source === EntrySource.linear_issue
+              ? "linear_issue"
+              : "manual",
     });
+  }
+
+  return tasks;
 }
 
 function buildBlockerItems(blockers: SummaryLogEntry[]) {
-  return blockers
-    .slice()
-    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
-    .map((entry) => entry.content);
+  return dedupeOrderedLines(
+    blockers
+      .slice()
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .map((entry) => entry.content),
+  );
 }
 
 function normaliseQuestionOptions(value: unknown) {
@@ -198,6 +268,7 @@ function parseSummaryResponse(text: string): ParsedSummaryResponse {
     summary: summaryValue || null,
     questions,
     requestCommits,
+    mode: "ai",
   };
 }
 
@@ -226,32 +297,38 @@ function formatCommitDetailsForPrompt(commitDetails: GithubCommitDetail[]) {
   ).trim();
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function buildAiPrompt(input: {
   updateNo: number;
   blockers: string[];
   commits: CommitPromptItem[];
-  tasks: string[];
+  tasks: TaskPromptItem[];
   period: SummaryPeriod;
   answers: SummaryAnswer[];
   requestedCommitDetails: GithubCommitDetail[];
 }) {
   const workLabel = input.period === "week" ? "this week's" : "today's";
   const summaryLabel = input.period === "week" ? "This week's work:" : "Today's work:";
+  const promptValues = stringifyYaml({
+    update_no: input.updateNo,
+    blockers: input.blockers,
+    commits: input.commits,
+    tasks: input.tasks,
+  }).trim();
 
   const sections = [
+    "Use the following values:",
+    "",
+    promptValues,
+    "",
     `I want you to generate a quick summary of ${workLabel} work as a Slack message.`,
     "",
-    `Here are some blockers that had occurred for this summary in ascending order of when they were noted: ${stringifyYaml(
-      input.blockers,
-    ).trim()}`,
-    "",
-    `Here are some git commit messages and their ids: ${stringifyYaml(input.commits).trim()}`,
-    "",
-    `Here are some tasks that the engineer mentioned that may not have been recorded by the git commit messages: ${stringifyYaml(
-      input.tasks,
-    ).trim()}`,
-    "",
     "These are passed in ascending order of when they were noted/comitted.",
+    "",
+    "Each task may include a status_hint. You may trust explicit completed or in_progress hints when the wording is direct.",
     "",
     "You must analyse these commit messages and identify tasks that have been completed and tasks that are in progress. If you are unsure, you may ask questions specified later below in this message. DO NOT take a guess as to what's completed or in progress if unsure.",
     "",
@@ -388,6 +465,10 @@ function buildFallbackSummary(input: {
       continue;
     }
 
+    if (LOW_SIGNAL_TASK_PATTERN.test(entry.content.trim())) {
+      continue;
+    }
+
     if (looksInProgress(entry.content)) {
       inProgress.push(entry.content);
     } else {
@@ -396,9 +477,9 @@ function buildFallbackSummary(input: {
   }
 
   const workLabel = input.period === "week" ? "This week's work:" : "Today's work:";
-  const blockerLines = dedupeLines(input.blockers.map((entry) => truncateLine(entry.content)));
-  const completedLines = dedupeLines(completed.map((line) => truncateLine(line))).slice(0, 6);
-  const inProgressLines = dedupeLines(inProgress.map((line) => truncateLine(line))).slice(0, 4);
+  const blockerLines = dedupeOrderedLines(input.blockers.map((entry) => truncateLine(entry.content)));
+  const completedLines = dedupeOrderedLines(completed.map((line) => truncateLine(line)));
+  const inProgressLines = dedupeOrderedLines(inProgress.map((line) => truncateLine(line)));
 
   const lines = [`Update #${input.updateNo}`, "", workLabel];
   for (const line of completedLines.length ? completedLines : ["No completed work logged."]) {
@@ -423,6 +504,7 @@ function buildFallbackSummary(input: {
     summary: lines.join("\n"),
     questions: [],
     requestCommits: [],
+    mode: "fallback",
   };
 }
 
@@ -432,7 +514,7 @@ async function runAiSummary(input: {
   updateNo: number;
   blockers: string[];
   commits: CommitPromptItem[];
-  tasks: string[];
+  tasks: TaskPromptItem[];
   commitDetails: GithubCommitDetail[];
   answers: SummaryAnswer[];
 }) {
@@ -441,8 +523,9 @@ async function runAiSummary(input: {
     return null;
   }
 
+  const modelName = process.env.GOOGLE_AI_MODEL ?? "gemini-2.5-flash";
   const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: modelName,
   });
 
   let requestedCommitDetails: GithubCommitDetail[] = [];
@@ -474,7 +557,18 @@ async function runAiSummary(input: {
       }
 
       return parsed;
-    } catch {
+    } catch (error) {
+      const status =
+        typeof error === "object" && error !== null && "status" in error ? Number((error as { status?: unknown }).status) : null;
+      if ((status === 429 || status === 503) && attempt < 2) {
+        await sleep(1500 * (attempt + 1));
+        continue;
+      }
+
+      console.error("Gemini summary generation failed", {
+        modelName,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
