@@ -67,6 +67,7 @@ model Project {
   githubRepo        String    @map("github_repo")
   githubRepoUrl     String?   @map("github_repo_url")
   githubRepoId      String?   @map("github_repo_id")
+  githubRepoUpdatedAt DateTime? @map("github_repo_updated_at")
   linearTeamId      String?   @map("linear_team_id")
   linearProjectId   String?   @map("linear_project_id")
   linearProjectName String?   @map("linear_project_name")

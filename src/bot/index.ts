@@ -6,6 +6,7 @@ import {
   handleDelete,
   handleDid,
   handleDirectMessage,
+  handleEntryModalSubmission,
   handleEdit,
   handleSummarise,
 } from "@/bot/commands";
@@ -24,6 +25,7 @@ app.command("/edit", handleEdit);
 app.command("/delete", handleDelete);
 app.command("/summarise", handleSummarise);
 app.command("/auth", handleAuth);
+app.view("standup_entry_submit", handleEntryModalSubmission);
 
 app.message(async ({ message }) => {
   if (

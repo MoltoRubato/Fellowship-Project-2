@@ -26,6 +26,7 @@ export async function GET() {
         id: repo.id,
         nameWithOwner: repo.nameWithOwner,
         url: repo.url,
+        updatedAt: repo.updatedAt,
       })),
     );
   }

@@ -1,5 +1,5 @@
 import { EntrySource, EntryType } from "@prisma/client";
-import type { App, SlackCommandMiddlewareArgs, AllMiddlewareArgs } from "@slack/bolt";
+import type { App, SlackCommandMiddlewareArgs, AllMiddlewareArgs, SlackViewMiddlewareArgs } from "@slack/bolt";
 import { generateStandupSummary, getSummaryWindow } from "@/server/services/summary";
 import {
   deleteManualEntry,
@@ -13,10 +13,53 @@ import {
   logEntry,
   normalizeRepo,
   syncConnectedActivity,
+  type UserContext,
 } from "@/server/services/standup";
 import { sendAuthLinkDm } from "@/server/services/slack";
 
 type CommandArgs = SlackCommandMiddlewareArgs & AllMiddlewareArgs;
+type ViewArgs = SlackViewMiddlewareArgs & AllMiddlewareArgs;
+
+const ENTRY_MODAL_CALLBACK_ID = "standup_entry_submit";
+const REPO_SELECT_BLOCK_ID = "repo_select_block";
+const REPO_SELECT_ACTION_ID = "repo_select_action";
+const REPO_INPUT_BLOCK_ID = "repo_input_block";
+const REPO_INPUT_ACTION_ID = "repo_input_action";
+const MESSAGE_BLOCK_ID = "message_block";
+const MESSAGE_ACTION_ID = "message_action";
+
+type ModalEntryType = "update" | "blocker";
+
+function getProjectTimestamp(value?: Date | null) {
+  return value instanceof Date ? value.getTime() : 0;
+}
+
+function sortProjectsForRepoPicker(projects: UserContext["projects"]) {
+  return [...projects].sort((left, right) => {
+    const updatedDelta =
+      getProjectTimestamp(right.githubRepoUpdatedAt) - getProjectTimestamp(left.githubRepoUpdatedAt);
+    if (updatedDelta !== 0) {
+      return updatedDelta;
+    }
+
+    const usedDelta = getProjectTimestamp(right.lastUsedAt) - getProjectTimestamp(left.lastUsedAt);
+    if (usedDelta !== 0) {
+      return usedDelta;
+    }
+
+    return left.githubRepo.localeCompare(right.githubRepo);
+  });
+}
+
+function getMostRecentlyUpdatedRepo(user?: UserContext | null) {
+  if (!user?.projects.length) {
+    return user?.defaultProject?.githubRepo ?? null;
+  }
+
+  const [project] = sortProjectsForRepoPicker(user.projects);
+
+  return project?.githubRepo ?? user.defaultProject?.githubRepo ?? null;
+}
 
 function parseRepoAndText(rawText: string, defaultRepo?: string | null) {
   const trimmed = rawText.trim();
@@ -129,6 +172,12 @@ async function resolveDefaultRepo(slackUserId: string) {
   return user?.defaultProject?.githubRepo ?? user?.projects[0]?.githubRepo ?? null;
 }
 
+async function loadUserForEntryModal(slackUserId: string, slackTeamId: string) {
+  const { created } = await ensureSlackUser(slackUserId, slackTeamId);
+  const user = await getUserContextBySlackId(slackUserId);
+  return { created, user };
+}
+
 async function resolveDisplayName(client: App["client"], slackUserId: string, fallback: string) {
   try {
     const info = await client.users.info({ user: slackUserId });
@@ -151,72 +200,254 @@ function formatRecentEntriesHelp(entries: Awaited<ReturnType<typeof listRecentMa
   return ["Recent manual entries:", ...lines].join("\n");
 }
 
-export async function handleDid(args: CommandArgs) {
-  const { command, ack, respond } = args;
-  await ack();
+function buildRepoOption(repo: string) {
+  return {
+    text: {
+      type: "plain_text" as const,
+      text: repo,
+    },
+    value: repo,
+  };
+}
 
-  const { user, created } = await ensureSlackUser(command.user_id, command.team_id);
-  const defaultRepo = (await resolveDefaultRepo(command.user_id)) ?? null;
-  const parsed = parseRepoAndText(command.text ?? "", defaultRepo);
-
-  if (!parsed.text) {
-    await respond({
-      response_type: "ephemeral",
-      text: "Usage: `/did [owner/repo] finished the OAuth callback flow`",
+async function sendModalConfirmation(
+  client: App["client"],
+  channelId: string,
+  userId: string,
+  text: string,
+) {
+  if (channelId.startsWith("D")) {
+    await client.chat.postMessage({
+      channel: channelId,
+      text,
     });
     return;
   }
 
-  const entry = await logEntry({
-    slackUserId: command.user_id,
-    slackTeamId: command.team_id,
-    repo: parsed.repo,
-    content: parsed.text,
-    entryType: EntryType.update,
-    source: EntrySource.manual,
+  await client.chat.postEphemeral({
+    channel: channelId,
+    user: userId,
+    text,
+  });
+}
+
+async function openEntryModal(
+  args: CommandArgs,
+  config: {
+    entryType: ModalEntryType;
+    title: string;
+    submitLabel: string;
+    messageLabel: string;
+    messagePlaceholder: string;
+  },
+) {
+  const { command, ack, client, respond } = args;
+  await ack();
+
+  const { created, user } = await loadUserForEntryModal(command.user_id, command.team_id);
+  const defaultRepo = getMostRecentlyUpdatedRepo(user);
+  const parsed = parseRepoAndText(command.text ?? "", defaultRepo);
+  const repoOptions = sortProjectsForRepoPicker(user?.projects ?? [])
+    .slice(0, 100)
+    .map((project) => buildRepoOption(project.githubRepo));
+  const initialRepo =
+    repoOptions.find((option) => option.value === parsed.repo) ??
+    repoOptions.find((option) => option.value === defaultRepo) ??
+    repoOptions[0];
+
+  const blocks: any[] = [];
+
+  if (repoOptions.length) {
+    blocks.push({
+      type: "input",
+      block_id: REPO_SELECT_BLOCK_ID,
+      label: {
+        type: "plain_text",
+        text: "Repo",
+      },
+      element: {
+        type: "static_select",
+        action_id: REPO_SELECT_ACTION_ID,
+        placeholder: {
+          type: "plain_text",
+          text: "Pick a repo",
+        },
+        options: repoOptions,
+        ...(initialRepo ? { initial_option: initialRepo } : {}),
+      },
+    });
+  } else {
+    blocks.push({
+      type: "input",
+      optional: true,
+      block_id: REPO_INPUT_BLOCK_ID,
+      label: {
+        type: "plain_text",
+        text: "Repo",
+      },
+      hint: {
+        type: "plain_text",
+        text: "Connect GitHub to turn this into a repo picker.",
+      },
+      element: {
+        type: "plain_text_input",
+        action_id: REPO_INPUT_ACTION_ID,
+        initial_value: parsed.repo ?? "",
+        placeholder: {
+          type: "plain_text",
+          text: "owner/repo",
+        },
+      },
+    });
+  }
+
+  blocks.push({
+    type: "input",
+    block_id: MESSAGE_BLOCK_ID,
+    label: {
+      type: "plain_text",
+      text: config.messageLabel,
+    },
+    element: {
+      type: "plain_text_input",
+      action_id: MESSAGE_ACTION_ID,
+      multiline: true,
+      initial_value: parsed.text,
+      placeholder: {
+        type: "plain_text",
+        text: config.messagePlaceholder,
+      },
+    },
   });
 
-  const sentOnboarding = await maybeSendOnboardingLink(command.user_id, command.team_id, created);
-  const repoLabel = parsed.repo ? ` for *${parsed.repo}*` : "";
+  try {
+    await client.views.open({
+      trigger_id: command.trigger_id,
+      view: {
+        type: "modal",
+        callback_id: ENTRY_MODAL_CALLBACK_ID,
+        private_metadata: JSON.stringify({
+          channelId: command.channel_id,
+          teamId: command.team_id,
+          entryType: config.entryType,
+        }),
+        title: {
+          type: "plain_text",
+          text: config.title,
+        },
+        submit: {
+          type: "plain_text",
+          text: config.submitLabel,
+        },
+        close: {
+          type: "plain_text",
+          text: "Cancel",
+        },
+        blocks,
+      },
+    });
+  } catch (error) {
+    const slackError =
+      typeof error === "object" && error !== null && "data" in error
+        ? (error as { data?: { error?: string } }).data?.error
+        : undefined;
 
-  await respond({
-    response_type: "ephemeral",
-    text: `✅ Logged #${entry.displayId}${repoLabel}: _"${parsed.text}"_${sentOnboarding ? "\nI also sent you an auth link in DM so you can connect GitHub or Linear later." : ""}`,
+    if (slackError === "expired_trigger_id") {
+      await respond({
+        response_type: "ephemeral",
+        text: "The Slack modal took too long to open. Please run the command again.",
+      });
+      return;
+    }
+
+    throw error;
+  }
+
+  await maybeSendOnboardingLink(command.user_id, command.team_id, created);
+}
+
+function resolveRepoFromModal(view: ViewArgs["view"]) {
+  const selectedRepo =
+    view.state.values[REPO_SELECT_BLOCK_ID]?.[REPO_SELECT_ACTION_ID] &&
+    "selected_option" in view.state.values[REPO_SELECT_BLOCK_ID][REPO_SELECT_ACTION_ID]
+      ? view.state.values[REPO_SELECT_BLOCK_ID][REPO_SELECT_ACTION_ID].selected_option?.value
+      : undefined;
+
+  const typedRepo =
+    view.state.values[REPO_INPUT_BLOCK_ID]?.[REPO_INPUT_ACTION_ID] &&
+    "value" in view.state.values[REPO_INPUT_BLOCK_ID][REPO_INPUT_ACTION_ID]
+      ? view.state.values[REPO_INPUT_BLOCK_ID][REPO_INPUT_ACTION_ID].value
+      : undefined;
+
+  return normalizeRepo(selectedRepo ?? typedRepo ?? null);
+}
+
+export async function handleDid(args: CommandArgs) {
+  await openEntryModal(args, {
+    entryType: "update",
+    title: "Log work update",
+    submitLabel: "Log update",
+    messageLabel: "What did you work on?",
+    messagePlaceholder: "Finished the auth callback flow and verified the dashboard.",
   });
 }
 
 export async function handleBlocker(args: CommandArgs) {
-  const { command, ack, respond } = args;
-  await ack();
+  await openEntryModal(args, {
+    entryType: "blocker",
+    title: "Log blocker",
+    submitLabel: "Log blocker",
+    messageLabel: "What is blocking you?",
+    messagePlaceholder: "Waiting on GitHub OAuth callback URL to be updated.",
+  });
+}
 
-  const { created } = await ensureSlackUser(command.user_id, command.team_id);
-  const defaultRepo = (await resolveDefaultRepo(command.user_id)) ?? null;
-  const parsed = parseRepoAndText(command.text ?? "", defaultRepo);
+export async function handleEntryModalSubmission(args: ViewArgs) {
+  const { ack, body, client, view } = args;
+  const rawMessage =
+    view.state.values[MESSAGE_BLOCK_ID]?.[MESSAGE_ACTION_ID] &&
+    "value" in view.state.values[MESSAGE_BLOCK_ID][MESSAGE_ACTION_ID]
+      ? view.state.values[MESSAGE_BLOCK_ID][MESSAGE_ACTION_ID].value
+      : "";
+  const content = (rawMessage ?? "").trim();
 
-  if (!parsed.text) {
-    await respond({
-      response_type: "ephemeral",
-      text: "Usage: `/blocker [owner/repo] waiting on access from DevOps`",
+  if (!content) {
+    await ack({
+      response_action: "errors",
+      errors: {
+        [MESSAGE_BLOCK_ID]: "Please add some detail before submitting.",
+      },
     });
     return;
   }
 
+  await ack();
+
+  const metadata = JSON.parse(view.private_metadata || "{}") as {
+    channelId?: string;
+    teamId?: string;
+    entryType?: ModalEntryType;
+  };
+  const repo = resolveRepoFromModal(view);
+  const entryType = metadata.entryType === "blocker" ? EntryType.blocker : EntryType.update;
   const entry = await logEntry({
-    slackUserId: command.user_id,
-    slackTeamId: command.team_id,
-    repo: parsed.repo,
-    content: parsed.text,
-    entryType: EntryType.blocker,
+    slackUserId: body.user.id,
+    slackTeamId: metadata.teamId ?? body.team?.id ?? "",
+    repo,
+    content,
+    entryType,
     source: EntrySource.manual,
   });
+  const prefix = entryType === EntryType.blocker ? "🚧 Logged blocker" : "✅ Logged";
+  const repoLabel = repo ? ` for *${repo}*` : "";
+  const channelId = metadata.channelId ?? body.user.id;
 
-  const sentOnboarding = await maybeSendOnboardingLink(command.user_id, command.team_id, created);
-  const repoLabel = parsed.repo ? ` for *${parsed.repo}*` : "";
-
-  await respond({
-    response_type: "ephemeral",
-    text: `🚧 Logged blocker #${entry.displayId}${repoLabel}: _"${parsed.text}"_${sentOnboarding ? "\nA setup link is waiting in your DM as well." : ""}`,
-  });
+  await sendModalConfirmation(
+    client,
+    channelId,
+    body.user.id,
+    `${prefix} #${entry.displayId}${repoLabel}: _"${content}"_`,
+  );
 }
 
 export async function handleEdit(args: CommandArgs) {

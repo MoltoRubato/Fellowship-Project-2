@@ -9,6 +9,7 @@ export interface GithubVisibleRepo {
   url: string;
   isPrivate: boolean;
   visibility: string;
+  updatedAt: string | null;
 }
 
 export interface GithubConnectionSnapshot {
@@ -159,6 +160,7 @@ async function loadGithubReposFromAccount(account: Account) {
     url: repo.html_url,
     isPrivate: repo.private,
     visibility: repo.visibility ?? (repo.private ? "private" : "public"),
+    updatedAt: repo.updated_at ?? null,
   }));
 
   return {
