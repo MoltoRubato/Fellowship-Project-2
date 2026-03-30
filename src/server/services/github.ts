@@ -9,6 +9,7 @@ export interface GithubVisibleRepo {
   url: string;
   isPrivate: boolean;
   visibility: string;
+  updatedAt: string | null;
 }
 
 export interface GithubConnectionSnapshot {
@@ -27,6 +28,26 @@ export interface GithubActivityItem {
   externalId: string;
   externalUrl?: string;
   createdAt: Date;
+}
+
+export interface GithubCommitLookup {
+  repo: string;
+  sha: string;
+  message: string;
+  createdAt: Date;
+}
+
+export interface GithubCommitDetail {
+  repo: string;
+  sha: string;
+  message: string;
+  authors: string[];
+  createdAt: Date;
+  files: Array<{
+    filename: string;
+    status?: string;
+    patch?: string | null;
+  }>;
 }
 
 function createGithubClient(accessToken: string) {
@@ -68,6 +89,83 @@ async function getGithubAccount(userId: string) {
       },
     },
   });
+}
+
+export async function fetchGithubCommitDetails(
+  userId: string,
+  commits: GithubCommitLookup[],
+): Promise<GithubCommitDetail[]> {
+  if (!commits.length) {
+    return [];
+  }
+
+  const account = await getGithubAccount(userId);
+  if (!account) {
+    return commits.map((commit) => ({
+      repo: commit.repo,
+      sha: commit.sha,
+      message: commit.message,
+      authors: [],
+      createdAt: commit.createdAt,
+      files: [],
+    }));
+  }
+
+  const token = decrypt(account.accessToken);
+  const octokit = createGithubClient(token);
+  const results: GithubCommitDetail[] = [];
+
+  for (const commit of commits) {
+    const [owner, repo] = commit.repo.split("/");
+    if (!owner || !repo) {
+      results.push({
+        repo: commit.repo,
+        sha: commit.sha,
+        message: commit.message,
+        authors: account.username ? [account.username] : [],
+        createdAt: commit.createdAt,
+        files: [],
+      });
+      continue;
+    }
+
+    try {
+      const response = await octokit.rest.repos.getCommit({
+        owner,
+        repo,
+        ref: commit.sha,
+      });
+      const authors = [
+        response.data.author?.login,
+        response.data.commit.author?.name,
+        response.data.commit.committer?.name,
+      ].filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
+
+      results.push({
+        repo: commit.repo,
+        sha: commit.sha,
+        message: response.data.commit.message.split("\n")[0]?.trim() || commit.message,
+        authors,
+        createdAt: commit.createdAt,
+        files: (response.data.files ?? []).map((file) => ({
+          filename: file.filename,
+          status: file.status,
+          patch: file.patch ?? null,
+        })),
+      });
+    } catch {
+      results.push({
+        repo: commit.repo,
+        sha: commit.sha,
+        message: commit.message,
+        authors: account.username ? [account.username] : [],
+        createdAt: commit.createdAt,
+        files: [],
+      });
+    }
+  }
+
+  return results;
 }
 
 export async function exchangeGithubCode(code: string, redirectUri: string) {
@@ -159,6 +257,7 @@ async function loadGithubReposFromAccount(account: Account) {
     url: repo.html_url,
     isPrivate: repo.private,
     visibility: repo.visibility ?? (repo.private ? "private" : "public"),
+    updatedAt: repo.updated_at ?? null,
   }));
 
   return {
@@ -215,6 +314,8 @@ export async function fetchGithubActivity(
       commits?: Array<{ sha: string; message: string }>;
       pull_request?: { id: number; title: string; html_url: string };
       action?: string;
+      before?: string;
+      head?: string;
     };
     const createdAt = event.created_at ? new Date(event.created_at) : null;
     if (!createdAt || createdAt < since) {
@@ -231,7 +332,27 @@ export async function fetchGithubActivity(
     }
 
     if (event.type === "PushEvent") {
-      for (const commit of payload.commits ?? []) {
+      let commits = payload.commits ?? [];
+
+      // GitHub Events API sometimes omits commits from PushEvent payloads.
+      // Fall back to the compare API to retrieve them.
+      if (commits.length === 0 && payload.before && payload.head) {
+        try {
+          const [owner, repo] = repoName.split("/");
+          const compare = await octokit.request(
+            "GET /repos/{owner}/{repo}/compare/{basehead}",
+            { owner, repo, basehead: `${payload.before}...${payload.head}` },
+          );
+          commits = compare.data.commits.map((c: { sha: string; commit: { message: string } }) => ({
+            sha: c.sha,
+            message: c.commit.message,
+          }));
+        } catch {
+          // Compare may fail for force-pushes or deleted refs — skip silently
+        }
+      }
+
+      for (const commit of commits) {
         const message = commit.message.split("\n")[0]?.trim();
         if (!message || message.startsWith("Merge")) {
           continue;

@@ -10,7 +10,7 @@ export type UserContext = Prisma.UserGetPayload<{
     accounts: true;
     defaultProject: true;
     projects: {
-      orderBy: [{ lastUsedAt: "desc" }, { updatedAt: "desc" }];
+      orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }];
     };
   };
 }>;
@@ -73,7 +73,7 @@ export async function getUserContextBySlackId(slackUserId: string) {
       accounts: true,
       defaultProject: true,
       projects: {
-        orderBy: [{ lastUsedAt: "desc" }, { updatedAt: "desc" }],
+        orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }],
       },
     },
   });
@@ -86,7 +86,7 @@ export async function getUserContextById(userId: string) {
       accounts: true,
       defaultProject: true,
       projects: {
-        orderBy: [{ lastUsedAt: "desc" }, { updatedAt: "desc" }],
+        orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }],
       },
     },
   });
@@ -120,7 +120,7 @@ async function resolveProjectForUser(userId: string, repo?: string | null) {
     include: {
       defaultProject: true,
       projects: {
-        orderBy: [{ lastUsedAt: "desc" }, { updatedAt: "desc" }],
+        orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }],
       },
     },
   });
@@ -177,6 +177,7 @@ export async function syncGithubProjects(
     id: string;
     nameWithOwner: string;
     url: string;
+    updatedAt: string | null;
   }>,
 ) {
   for (const repo of repos) {
@@ -192,17 +193,23 @@ export async function syncGithubProjects(
         githubRepo: repo.nameWithOwner.toLowerCase(),
         githubRepoId: repo.id,
         githubRepoUrl: repo.url,
+        githubRepoUpdatedAt: repo.updatedAt ? new Date(repo.updatedAt) : null,
       },
       update: {
         githubRepoId: repo.id,
         githubRepoUrl: repo.url,
+        githubRepoUpdatedAt: repo.updatedAt ? new Date(repo.updatedAt) : null,
       },
     });
   }
 
   const user = await db.user.findUnique({
     where: { id: userId },
-    include: { projects: true },
+    include: {
+      projects: {
+        orderBy: [{ githubRepoUpdatedAt: "desc" }, { githubRepo: "asc" }],
+      },
+    },
   });
 
   if (!user?.defaultProjectId && user?.projects.length) {
@@ -217,7 +224,7 @@ export async function syncGithubProjects(
 
   return db.project.findMany({
     where: { userId },
-    orderBy: [{ lastUsedAt: "desc" }, { githubRepo: "asc" }],
+    orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { githubRepo: "asc" }],
   });
 }
 

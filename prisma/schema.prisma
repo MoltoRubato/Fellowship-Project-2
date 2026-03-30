@@ -26,6 +26,12 @@ enum EntrySource {
   linear_issue
 }
 
+enum SummarySessionStatus {
+  pending
+  completed
+  expired
+}
+
 model User {
   id               String    @id @default(cuid())
   slackUserId      String    @unique @map("slack_user_id")
@@ -38,6 +44,7 @@ model User {
   defaultProject Project?   @relation("DefaultProject", fields: [defaultProjectId], references: [id], onDelete: SetNull)
   logEntries     LogEntry[]
   projects       Project[]  @relation("OwnedProjects")
+  summarySessions SummarySession[]
 
   @@map("users")
 }
@@ -67,6 +74,7 @@ model Project {
   githubRepo        String    @map("github_repo")
   githubRepoUrl     String?   @map("github_repo_url")
   githubRepoId      String?   @map("github_repo_id")
+  githubRepoUpdatedAt DateTime? @map("github_repo_updated_at")
   linearTeamId      String?   @map("linear_team_id")
   linearProjectId   String?   @map("linear_project_id")
   linearProjectName String?   @map("linear_project_name")
@@ -76,6 +84,7 @@ model Project {
 
   defaultedBy User[]     @relation("DefaultProject")
   logEntries  LogEntry[]
+  summarySessions SummarySession[]
   user        User       @relation("OwnedProjects", fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, githubRepo])
@@ -106,6 +115,30 @@ model LogEntry {
   @@index([userId, deletedAt])
   @@index([projectId, createdAt])
   @@map("log_entries")
+}
+
+model SummarySession {
+  id             String               @id @default(cuid())
+  userId         String               @map("user_id")
+  projectId      String?              @map("project_id")
+  channelId      String               @map("channel_id")
+  period         String
+  updateNo       Int                  @map("update_no")
+  summaryPreview String?              @map("summary_preview")
+  questions      Json                 @default("[]")
+  answers        Json                 @default("[]")
+  status         SummarySessionStatus @default(pending)
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  expiresAt      DateTime             @map("expires_at")
+  completedAt    DateTime?            @map("completed_at")
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, expiresAt])
+  @@index([userId, projectId, updateNo])
+  @@map("summary_sessions")
 }
 
 model LinkToken {
