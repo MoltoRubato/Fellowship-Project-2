@@ -12,6 +12,7 @@ import {
   handleEntryModalSubmission,
   handleEdit,
   handleSummaryModalSubmission,
+  handleSummaryRepoPick,
   handleSummarise,
 } from "@/bot/commands";
 import { startActivitySyncJob, startReminderJobs } from "@/bot/jobs";
@@ -34,6 +35,7 @@ app.view("standup_edit_submit", handleEditModalSubmission);
 app.view("standup_delete_submit", handleDeleteModalSubmission);
 app.view("standup_summary_submit", handleSummaryModalSubmission);
 app.action("entry_select_action", handleEntrySelectionChange);
+app.action("summary_repo_pick", handleSummaryRepoPick);
 
 app.message(async ({ message }) => {
   if (
