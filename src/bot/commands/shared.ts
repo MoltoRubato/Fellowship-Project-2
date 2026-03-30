@@ -37,22 +37,27 @@ export function truncatePlainText(text: string, max = 75) {
   return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 3))}...`;
 }
 
-export function formatProjectLabel(project?: {
+type ProjectLike = {
   githubRepo: string;
-  linearProjectName?: string | null;
-} | null) {
+  integrations?: Array<{ type: string; externalName?: string | null }>;
+};
+
+function getIntegrationLabel(project: ProjectLike) {
+  const linear = project.integrations?.find((i) => i.type === "linear");
+  return linear?.externalName ?? null;
+}
+
+export function formatProjectLabel(project?: ProjectLike | null) {
   if (!project) {
     return "No repo";
   }
 
-  const linearLabel = project.linearProjectName ? ` | ${project.linearProjectName}` : "";
-  return truncatePlainText(`${project.githubRepo}${linearLabel}`);
+  const integrationName = getIntegrationLabel(project);
+  const suffix = integrationName ? ` | ${integrationName}` : "";
+  return truncatePlainText(`${project.githubRepo}${suffix}`);
 }
 
-export function buildProjectOption(project: {
-  githubRepo: string;
-  linearProjectName?: string | null;
-}) {
+export function buildProjectOption(project: ProjectLike) {
   return {
     text: {
       type: "plain_text" as const,
@@ -65,7 +70,7 @@ export function buildProjectOption(project: {
 export function toEntryModalItem(entry: {
   displayId: number;
   content: string;
-  project?: { githubRepo: string; linearProjectName?: string | null } | null;
+  project?: ProjectLike | null;
 }): EntryModalItem {
   return {
     displayId: entry.displayId,
@@ -162,15 +167,15 @@ function getProjectTimestamp(value?: Date | null) {
 
 export function sortProjectsForRepoPicker(projects: UserContext["projects"]) {
   return [...projects].sort((left, right) => {
+    const usedDelta = getProjectTimestamp(right.lastUsedAt) - getProjectTimestamp(left.lastUsedAt);
+    if (usedDelta !== 0) {
+      return usedDelta;
+    }
+
     const updatedDelta =
       getProjectTimestamp(right.githubRepoUpdatedAt) - getProjectTimestamp(left.githubRepoUpdatedAt);
     if (updatedDelta !== 0) {
       return updatedDelta;
-    }
-
-    const usedDelta = getProjectTimestamp(right.lastUsedAt) - getProjectTimestamp(left.lastUsedAt);
-    if (usedDelta !== 0) {
-      return usedDelta;
     }
 
     return left.githubRepo.localeCompare(right.githubRepo);
