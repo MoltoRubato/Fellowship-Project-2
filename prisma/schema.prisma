@@ -1,0 +1,122 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountProvider {
+  github
+  linear
+}
+
+enum EntryType {
+  update
+  blocker
+  status
+}
+
+enum EntrySource {
+  manual
+  dm
+  github_commit
+  github_pr
+  linear_issue
+}
+
+model User {
+  id               String    @id @default(cuid())
+  slackUserId      String    @unique @map("slack_user_id")
+  slackTeamId      String    @map("slack_team_id")
+  defaultProjectId String?   @map("default_project_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  accounts       Account[]
+  defaultProject Project?   @relation("DefaultProject", fields: [defaultProjectId], references: [id], onDelete: SetNull)
+  logEntries     LogEntry[]
+  projects       Project[]  @relation("OwnedProjects")
+
+  @@map("users")
+}
+
+model Account {
+  id                String          @id @default(cuid())
+  userId            String          @map("user_id")
+  provider          AccountProvider
+  providerAccountId String          @map("provider_account_id")
+  accessToken       String          @map("access_token")
+  username          String?
+  scope             String?
+  metadata          Json?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Project {
+  id                String    @id @default(cuid())
+  userId            String    @map("user_id")
+  githubRepo        String    @map("github_repo")
+  githubRepoUrl     String?   @map("github_repo_url")
+  githubRepoId      String?   @map("github_repo_id")
+  linearTeamId      String?   @map("linear_team_id")
+  linearProjectId   String?   @map("linear_project_id")
+  linearProjectName String?   @map("linear_project_name")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  lastUsedAt        DateTime? @map("last_used_at")
+
+  defaultedBy User[]     @relation("DefaultProject")
+  logEntries  LogEntry[]
+  user        User       @relation("OwnedProjects", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, githubRepo])
+  @@unique([userId, githubRepoId])
+  @@map("projects")
+}
+
+model LogEntry {
+  id          String      @id @default(cuid())
+  displayId   Int         @unique @default(autoincrement()) @map("display_id")
+  userId      String      @map("user_id")
+  projectId   String?     @map("project_id")
+  content     String
+  entryType   EntryType   @map("entry_type")
+  source      EntrySource @default(manual)
+  title       String?
+  externalId  String?     @map("external_id")
+  externalUrl String?     @map("external_url")
+  metadata    Json?
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+  deletedAt   DateTime?   @map("deleted_at")
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, deletedAt])
+  @@index([projectId, createdAt])
+  @@map("log_entries")
+}
+
+model LinkToken {
+  id          String   @id @default(cuid())
+  slackUserId String   @map("slack_user_id")
+  slackTeamId String   @map("slack_team_id")
+  token       String   @unique
+  expiresAt   DateTime @map("expires_at")
+  used        Boolean  @default(false)
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("link_tokens")
+}
