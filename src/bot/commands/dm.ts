@@ -4,8 +4,8 @@ import {
   parseRepoAndText,
   resolveDefaultRepo,
   maybeSendOnboardingLink,
-} from "./shared.js";
-import { handlePendingSummarySessionReply } from "./summary.js";
+} from "./shared/index.js";
+import { handlePendingSummarySessionReply } from "./summary/index.js";
 import { ensureSlackUser, logEntry } from "@/server/services/standup";
 
 const dm: CommandModule = {

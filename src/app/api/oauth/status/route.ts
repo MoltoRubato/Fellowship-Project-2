@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import { getGithubConnectionSnapshot } from "@/server/services/github";
-import { getLinearConnectionSnapshot } from "@/server/services/linear";
+import { getGithubConnectionSnapshot } from "@/server/services/integrations/github";
+import { getLinearConnectionSnapshot } from "@/server/services/integrations/linear";
 import { getUserContextById, syncGithubProjects } from "@/server/services/standup";
 
 export const dynamic = "force-dynamic";

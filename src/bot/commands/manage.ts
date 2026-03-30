@@ -1,3 +1,4 @@
+import type { KnownBlock, Block } from "@slack/types";
 import type { CommandModule, CommandArgs, ViewArgs, ActionArgs, EntryModalItem } from "./types.js";
 import {
   EDIT_MODAL_CALLBACK_ID,
@@ -19,7 +20,7 @@ import {
   resolveEditTextFromModal,
   resolveDefaultRepo,
   sendModalConfirmation,
-} from "./shared.js";
+} from "./shared/index.js";
 import {
   editManualEntry,
   deleteManualEntry,
@@ -41,7 +42,7 @@ function buildEntryManagementModalView(input: {
   const initialOption =
     entryOptions.find((option) => option.value === String(input.selectedEntry.displayId)) ?? entryOptions[0];
 
-  const blocks: any[] = [
+  const blocks: (KnownBlock | Block)[] = [
     {
       type: "input",
       block_id: ENTRY_SELECT_BLOCK_ID,

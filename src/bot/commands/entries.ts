@@ -1,4 +1,5 @@
 import { EntrySource, EntryType } from "@prisma/client";
+import type { KnownBlock, Block } from "@slack/types";
 import type { CommandModule, CommandArgs, ViewArgs } from "./types.js";
 import {
   ENTRY_MODAL_CALLBACK_ID,
@@ -16,7 +17,7 @@ import {
   loadUserForEntryModal,
   maybeSendOnboardingLink,
   sendModalConfirmation,
-} from "./shared.js";
+} from "./shared/index.js";
 import { logEntry } from "@/server/services/standup";
 import type { ModalEntryType } from "./types.js";
 
@@ -44,7 +45,7 @@ async function openEntryModal(
     repoOptions.find((option) => option.value === defaultRepo) ??
     repoOptions[0];
 
-  const blocks: any[] = [];
+  const blocks: (KnownBlock | Block)[] = [];
 
   if (repoOptions.length) {
     blocks.push({

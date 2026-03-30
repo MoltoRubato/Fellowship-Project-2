@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import { exchangeLinearCode, saveLinearAccount } from "@/server/services/linear";
+import { exchangeLinearCode, saveLinearAccount } from "@/server/services/integrations/linear";
 import { sendAuthChangeDm } from "@/server/services/slack";
 
 export async function GET(request: NextRequest) {

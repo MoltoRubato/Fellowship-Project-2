@@ -1,9 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { trpc } from "@/trpc/react";
+import { ProviderCard } from "./_components/provider-card";
+import { ProjectRoutingSection } from "./_components/project-routing-section";
+import { GithubReposSection } from "./_components/github-repos-section";
+import { CommandDefaultsSection } from "./_components/command-defaults-section";
 
 const buttonBase =
   "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-300/50";
@@ -254,172 +257,23 @@ export default function AuthPage() {
           />
         </section>
 
-        <section className="rounded-[2rem] border border-white/10 bg-[var(--bg-elevated)] p-6 shadow-xl shadow-black/20 backdrop-blur sm:p-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold">Project routing</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-7 text-[var(--muted)]">
-                Each GitHub repo becomes a project. Map them to Linear projects for richer summaries.
-              </p>
-            </div>
-            <div className="text-sm text-[var(--muted)]">
-              {dashboard?.projects.length ?? 0} tracked repo{dashboard?.projects.length === 1 ? "" : "s"}
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4">
-            {dashboard?.projects.length ? (
-              dashboard.projects.map((project) => (
-                <article
-                  key={project.id}
-                  className="rounded-3xl border border-white/10 bg-slate-950/40 p-5"
-                >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <a
-                          className="text-lg font-medium text-white underline decoration-sky-300/40 underline-offset-4"
-                          href={project.githubRepoUrl ?? `https://github.com/${project.githubRepo}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {project.githubRepo}
-                        </a>
-                      </div>
-                      <p className="text-sm text-[var(--muted)]">
-                        {project.linearProjectName
-                          ? `Mapped to ${project.linearProjectName}`
-                          : dashboard?.linear.connected
-                            ? "No Linear project mapped yet."
-                            : "Connect Linear if you want issue updates in summaries."}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <div className="flex flex-col gap-2 sm:min-w-72">
-                        <select
-                          className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-2 text-sm text-white"
-                          disabled={!dashboard?.linear.connected}
-                          value={draftMappings[project.id] ?? ""}
-                          onChange={(event) =>
-                            setDraftMappings((current) => ({
-                              ...current,
-                              [project.id]: event.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">No Linear project</option>
-                          {(dashboard?.linear.projects ?? []).map((linearProject) => (
-                            <option key={linearProject.id} value={linearProject.id}>
-                              {linearProject.teamKey} · {linearProject.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          className={`${buttonBase} border border-sky-300/20 bg-sky-300/10 text-sky-50 hover:bg-sky-300/20`}
-                          disabled={!dashboard?.linear.connected || busyAction === `linear:${project.id}`}
-                          onClick={() => saveLinearMapping(project.id)}
-                        >
-                          Save Linear mapping
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <div className="rounded-3xl border border-dashed border-white/10 bg-slate-950/40 p-8 text-sm text-[var(--muted)]">
-                Connect GitHub to pull the repos this account can see. Those repos will appear here automatically.
-              </div>
-            )}
-          </div>
-        </section>
+        <ProjectRoutingSection
+          projects={dashboard?.projects ?? []}
+          linearConnected={Boolean(dashboard?.linear.connected)}
+          linearProjects={dashboard?.linear.projects ?? []}
+          draftMappings={draftMappings}
+          busyAction={busyAction}
+          onDraftChange={(projectId, value) =>
+            setDraftMappings((current) => ({ ...current, [projectId]: value }))
+          }
+          onSave={saveLinearMapping}
+        />
 
         <section className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-          <div className="rounded-[2rem] border border-white/10 bg-[var(--bg-elevated)] p-6 shadow-xl shadow-black/20 backdrop-blur sm:p-8">
-            <h2 className="text-2xl font-semibold">Visible GitHub repos</h2>
-            <p className="mt-2 text-sm leading-7 text-[var(--muted)]">
-              This is what the connected GitHub OAuth account is currently exposing to the app.
-            </p>
-
-            <div className="mt-6 grid gap-3">
-              {(dashboard?.github.repos ?? []).length ? (
-                dashboard?.github.repos.map((repo) => (
-                  <a
-                    key={repo.id}
-                    href={repo.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-950/40 px-4 py-3 text-sm hover:border-sky-300/30"
-                  >
-                    <span>{repo.nameWithOwner}</span>
-                    <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-[var(--muted)]">
-                      {repo.visibility}
-                    </span>
-                  </a>
-                ))
-              ) : (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/40 p-5 text-sm text-[var(--muted)]">
-                  No repos available yet.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border border-white/10 bg-[var(--bg-elevated)] p-6 shadow-xl shadow-black/20 backdrop-blur sm:p-8">
-            <h2 className="text-2xl font-semibold">Command defaults</h2>
-            <div className="mt-4 space-y-4 text-sm leading-7 text-[var(--muted)]">
-              <p>`/did [repo] message` logs work updates.</p>
-              <p>`/blocker [repo] message` logs blockers that stay active until deleted.</p>
-              <p>`/edit [repo] entryId new text` updates a previous manual log.</p>
-              <p>`/delete [repo] entryId` resolves or removes a previous manual log.</p>
-              <p>`/summarise [repo]` or `/summarise week` generates the Slack-ready summary format.</p>
-              <p>`/auth` sends a fresh dashboard link back to your Slack DM.</p>
-            </div>
-          </div>
+          <GithubReposSection repos={dashboard?.github.repos ?? []} />
+          <CommandDefaultsSection />
         </section>
       </div>
     </main>
-  );
-}
-
-function ProviderCard(props: {
-  title: string;
-  description: string;
-  connected: boolean;
-  username: string | null;
-  warning: string | null;
-  action: ReactNode;
-  detail: ReactNode;
-}) {
-  return (
-    <article className="rounded-[2rem] border border-white/10 bg-[var(--bg-elevated)] p-6 shadow-xl shadow-black/20 backdrop-blur sm:p-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-semibold">{props.title}</h2>
-            <span
-              className={`rounded-full px-3 py-1 text-xs ${
-                props.connected
-                  ? "border border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
-                  : "border border-white/10 bg-white/5 text-[var(--muted)]"
-              }`}
-            >
-              {props.connected ? "Connected" : "Not connected"}
-            </span>
-          </div>
-          <p className="mt-2 text-sm leading-7 text-[var(--muted)]">{props.description}</p>
-        </div>
-        {props.action}
-      </div>
-
-      <div className="mt-5">{props.detail}</div>
-
-      {props.warning ? (
-        <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
-          {props.warning}
-        </div>
-      ) : null}
-    </article>
   );
 }

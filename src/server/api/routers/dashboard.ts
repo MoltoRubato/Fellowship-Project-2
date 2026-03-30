@@ -1,6 +1,6 @@
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { getGithubConnectionSnapshot } from "@/server/services/github";
-import { getLinearConnectionSnapshot } from "@/server/services/linear";
+import { getGithubConnectionSnapshot } from "@/server/services/integrations/github";
+import { getLinearConnectionSnapshot } from "@/server/services/integrations/linear";
 import { getUserContextById, syncGithubProjects } from "@/server/services/standup";
 import { TRPCError } from "@trpc/server";
 

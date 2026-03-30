@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import { exchangeGithubCode, saveGithubAccount } from "@/server/services/github";
+import { exchangeGithubCode, saveGithubAccount } from "@/server/services/integrations/github";
 import { sendAuthChangeDm } from "@/server/services/slack";
 
 export async function GET(request: NextRequest) {

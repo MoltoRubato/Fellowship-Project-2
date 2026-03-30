@@ -1,0 +1,19 @@
+export const ENTRY_MODAL_CALLBACK_ID = "standup_entry_submit";
+export const SUMMARY_MODAL_CALLBACK_ID = "standup_summary_submit";
+export const EDIT_MODAL_CALLBACK_ID = "standup_edit_submit";
+export const DELETE_MODAL_CALLBACK_ID = "standup_delete_submit";
+export const REPO_SELECT_BLOCK_ID = "repo_select_block";
+export const REPO_SELECT_ACTION_ID = "repo_select_action";
+export const SUMMARY_REPO_PICK_ACTION_ID = "summary_repo_pick";
+export const REPO_INPUT_BLOCK_ID = "repo_input_block";
+export const REPO_INPUT_ACTION_ID = "repo_input_action";
+export const MESSAGE_BLOCK_ID = "message_block";
+export const MESSAGE_ACTION_ID = "message_action";
+export const ENTRY_SELECT_BLOCK_ID = "entry_select_block";
+export const ENTRY_SELECT_ACTION_ID = "entry_select_action";
+export const ENTRY_PREVIEW_BLOCK_ID = "entry_preview_block";
+export const EDIT_TEXT_BLOCK_ID = "edit_text_block";
+export const EDIT_TEXT_ACTION_ID = "edit_text_action";
+
+export const ENTRY_MODAL_RECENT_LIMIT = 12;
+export const ENTRY_MODAL_METADATA_MAX_CHARS = 2900;

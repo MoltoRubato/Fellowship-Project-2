@@ -2,7 +2,7 @@ import type { App } from "@slack/bolt";
 import type { CommandModule } from "./types.js";
 import entries from "./entries.js";
 import manage from "./manage.js";
-import summary from "./summary.js";
+import summary from "./summary/index.js";
 import auth from "./auth.js";
 import dm from "./dm.js";
 
