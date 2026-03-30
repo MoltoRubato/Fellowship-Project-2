@@ -37,7 +37,6 @@ export async function GET() {
   return NextResponse.json({
     user: {
       slackUserId: user.slackUserId,
-      defaultProjectId: refreshedUser?.defaultProjectId ?? null,
     },
     accounts: refreshedUser?.accounts.map((account) => ({
       provider: account.provider,
@@ -54,7 +53,6 @@ export async function GET() {
         linearTeamId: linearIntegration?.externalTeamId ?? null,
         linearProjectName: linearIntegration?.externalName ?? null,
         lastUsedAt: project.lastUsedAt,
-        isDefault: project.id === refreshedUser?.defaultProjectId,
       };
     }),
     github,

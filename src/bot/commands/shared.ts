@@ -184,12 +184,12 @@ export function sortProjectsForRepoPicker(projects: UserContext["projects"]) {
 
 export function getMostRecentlyUpdatedRepo(user?: UserContext | null) {
   if (!user?.projects.length) {
-    return user?.defaultProject?.githubRepo ?? null;
+    return null;
   }
 
   const [project] = sortProjectsForRepoPicker(user.projects);
 
-  return project?.githubRepo ?? user.defaultProject?.githubRepo ?? null;
+  return project?.githubRepo ?? null;
 }
 
 export function sortRepoNamesForRepoPicker(repoNames: string[], user?: UserContext | null) {
@@ -347,7 +347,7 @@ export function resolveEditTextFromModal(view: ViewArgs["view"]) {
 
 export async function resolveDefaultRepo(slackUserId: string) {
   const user = await getUserContextBySlackId(slackUserId);
-  return user?.defaultProject?.githubRepo ?? user?.projects[0]?.githubRepo ?? null;
+  return getMostRecentlyUpdatedRepo(user);
 }
 
 export async function loadUserForEntryModal(slackUserId: string, slackTeamId: string) {

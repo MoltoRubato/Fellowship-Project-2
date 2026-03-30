@@ -40,12 +40,10 @@ model User {
   id               String    @id @default(cuid())
   slackUserId      String    @unique @map("slack_user_id")
   slackTeamId      String    @map("slack_team_id")
-  defaultProjectId String?   @map("default_project_id")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
   accounts       Account[]
-  defaultProject Project?   @relation("DefaultProject", fields: [defaultProjectId], references: [id], onDelete: SetNull)
   logEntries     LogEntry[]
   projects       Project[]  @relation("OwnedProjects")
   summarySessions SummarySession[]
@@ -83,7 +81,6 @@ model Project {
   updatedAt         DateTime  @updatedAt @map("updated_at")
   lastUsedAt        DateTime? @map("last_used_at")
 
-  defaultedBy  User[]               @relation("DefaultProject")
   integrations ProjectIntegration[]
   logEntries   LogEntry[]
   summarySessions SummarySession[]

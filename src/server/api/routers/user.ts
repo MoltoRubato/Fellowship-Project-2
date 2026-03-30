@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { sendAuthChangeDm } from "@/server/services/slack";
-import { linkIntegration, setDefaultProject } from "@/server/services/standup";
+import { linkIntegration } from "@/server/services/standup";
 
 export const userRouter = createTRPCRouter({
   me: protectedProcedure.query(async ({ ctx }) => {
@@ -10,9 +10,6 @@ export const userRouter = createTRPCRouter({
       include: {
         accounts: {
           orderBy: { provider: "asc" },
-        },
-        defaultProject: {
-          include: { integrations: true },
         },
         projects: {
           include: { integrations: true },
@@ -54,13 +51,6 @@ export const userRouter = createTRPCRouter({
       }
 
       await sendAuthChangeDm(ctx.session.user.slackUserId, input.provider, false);
-      return { success: true };
-    }),
-
-  setDefaultProject: protectedProcedure
-    .input(z.object({ projectId: z.string() }))
-    .mutation(async ({ ctx, input }) => {
-      await setDefaultProject(ctx.session.user.id, input.projectId);
       return { success: true };
     }),
 

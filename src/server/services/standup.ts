@@ -8,9 +8,6 @@ const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 export type UserContext = Prisma.UserGetPayload<{
   include: {
     accounts: true;
-    defaultProject: {
-      include: { integrations: true };
-    };
     projects: {
       include: { integrations: true };
       orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }];
@@ -74,9 +71,6 @@ export async function getUserContextBySlackId(slackUserId: string) {
     where: { slackUserId },
     include: {
       accounts: true,
-      defaultProject: {
-        include: { integrations: true },
-      },
       projects: {
         include: { integrations: true },
         orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }],
@@ -90,9 +84,6 @@ export async function getUserContextById(userId: string) {
     where: { id: userId },
     include: {
       accounts: true,
-      defaultProject: {
-        include: { integrations: true },
-      },
       projects: {
         include: { integrations: true },
         orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }],
@@ -127,44 +118,13 @@ async function resolveProjectForUser(userId: string, repo?: string | null) {
   const user = await db.user.findUnique({
     where: { id: userId },
     include: {
-      defaultProject: true,
       projects: {
         orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }],
       },
     },
   });
 
-  const fallbackProject = user?.defaultProject ?? user?.projects[0] ?? null;
-  if (fallbackProject && user?.defaultProjectId !== fallbackProject.id) {
-    await db.user.update({
-      where: { id: userId },
-      data: {
-        defaultProjectId: fallbackProject.id,
-      },
-    });
-  }
-
-  return fallbackProject;
-}
-
-async function maybeSetDefaultProject(userId: string, projectId: string | null, force = false) {
-  if (!projectId) {
-    return;
-  }
-
-  const user = await db.user.findUnique({
-    where: { id: userId },
-    select: { defaultProjectId: true },
-  });
-
-  if (force || !user?.defaultProjectId) {
-    await db.user.update({
-      where: { id: userId },
-      data: {
-        defaultProjectId: projectId,
-      },
-    });
-  }
+  return user?.projects[0] ?? null;
 }
 
 async function touchProject(projectId?: string | null) {
@@ -221,43 +181,10 @@ export async function syncGithubProjects(
     },
   });
 
-  if (!user?.defaultProjectId && user?.projects.length) {
-    const firstProject = user.projects[0];
-    await db.user.update({
-      where: { id: userId },
-      data: {
-        defaultProjectId: firstProject.id,
-      },
-    });
-  }
-
   return db.project.findMany({
     where: { userId },
     orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { githubRepo: "asc" }],
   });
-}
-
-export async function setDefaultProject(userId: string, projectId: string) {
-  const project = await db.project.findFirst({
-    where: {
-      id: projectId,
-      userId,
-    },
-  });
-
-  if (!project) {
-    throw new Error("Project not found");
-  }
-
-  await db.user.update({
-    where: { id: userId },
-    data: {
-      defaultProjectId: projectId,
-    },
-  });
-
-  await touchProject(projectId);
-  return project;
 }
 
 export async function linkIntegration(
@@ -312,7 +239,7 @@ export async function linkIntegration(
 
 async function createLogEntryForUser(
   userId: string,
-  input: Omit<LoggedEntryInput, "slackUserId" | "slackTeamId"> & { setDefaultProject?: boolean },
+  input: Omit<LoggedEntryInput, "slackUserId" | "slackTeamId">,
 ) {
   const project = await resolveProjectForUser(userId, input.repo);
 
@@ -347,7 +274,6 @@ async function createLogEntryForUser(
 
   if (project?.id) {
     await touchProject(project.id);
-    await maybeSetDefaultProject(userId, project.id, input.setDefaultProject ?? false);
   }
 
   return entry;
@@ -356,10 +282,7 @@ async function createLogEntryForUser(
 export async function logEntry(input: LoggedEntryInput) {
   const { user } = await ensureSlackUser(input.slackUserId, input.slackTeamId);
 
-  return createLogEntryForUser(user.id, {
-    ...input,
-    setDefaultProject: Boolean(normalizeRepo(input.repo)),
-  });
+  return createLogEntryForUser(user.id, input);
 }
 
 export async function getProjectDisplayForUser(userId: string, repo?: string | null) {
@@ -552,9 +475,6 @@ export async function listActiveSlackUsers() {
     },
     include: {
       accounts: true,
-      defaultProject: {
-        include: { integrations: true },
-      },
       projects: {
         include: { integrations: true },
         orderBy: [{ lastUsedAt: "desc" }, { updatedAt: "desc" }],

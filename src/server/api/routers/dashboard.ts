@@ -30,7 +30,6 @@ export const dashboardRouter = createTRPCRouter({
     return {
       user: {
         slackUserId: user.slackUserId,
-        defaultProjectId: refreshedUser?.defaultProjectId ?? null,
       },
       accounts: (refreshedUser?.accounts ?? []).map((account) => ({
         provider: account.provider,
@@ -47,7 +46,6 @@ export const dashboardRouter = createTRPCRouter({
           linearTeamId: linearIntegration?.externalTeamId ?? null,
           linearProjectName: linearIntegration?.externalName ?? null,
           lastUsedAt: project.lastUsedAt,
-          isDefault: project.id === refreshedUser?.defaultProjectId,
         };
       }),
       github,

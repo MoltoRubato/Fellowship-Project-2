@@ -32,9 +32,6 @@ export default function AuthPage() {
   const disconnectMutation = trpc.user.disconnectAccount.useMutation({
     onSuccess: () => dashboardQuery.refetch(),
   });
-  const setDefaultMutation = trpc.user.setDefaultProject.useMutation({
-    onSuccess: () => dashboardQuery.refetch(),
-  });
   const linkLinearMutation = trpc.user.linkIntegration.useMutation({
     onSuccess: () => dashboardQuery.refetch(),
   });
@@ -98,12 +95,6 @@ export default function AuthPage() {
   async function disconnect(provider: "github" | "linear") {
     setBusyAction(`disconnect:${provider}`);
     await disconnectMutation.mutateAsync({ provider });
-    setBusyAction(null);
-  }
-
-  async function makeDefault(projectId: string) {
-    setBusyAction(`default:${projectId}`);
-    await setDefaultMutation.mutateAsync({ projectId });
     setBusyAction(null);
   }
 
@@ -268,8 +259,7 @@ export default function AuthPage() {
             <div>
               <h2 className="text-2xl font-semibold">Project routing</h2>
               <p className="mt-2 max-w-3xl text-sm leading-7 text-[var(--muted)]">
-                Each GitHub repo becomes a project. Set one as the default so `/did`, `/blocker`, `/edit`,
-                `/delete`, and `/summarise` can omit the repo name when you are working in the same place all week.
+                Each GitHub repo becomes a project. Map them to Linear projects for richer summaries.
               </p>
             </div>
             <div className="text-sm text-[var(--muted)]">
@@ -295,11 +285,6 @@ export default function AuthPage() {
                         >
                           {project.githubRepo}
                         </a>
-                        {project.isDefault ? (
-                          <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
-                            Default repo
-                          </span>
-                        ) : null}
                       </div>
                       <p className="text-sm text-[var(--muted)]">
                         {project.linearProjectName
@@ -311,14 +296,6 @@ export default function AuthPage() {
                     </div>
 
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <button
-                        className={`${buttonBase} border border-white/10 bg-white/5 text-white hover:bg-white/10`}
-                        disabled={project.isDefault || busyAction === `default:${project.id}`}
-                        onClick={() => makeDefault(project.id)}
-                      >
-                        {project.isDefault ? "Default" : "Make default"}
-                      </button>
-
                       <div className="flex flex-col gap-2 sm:min-w-72">
                         <select
                           className="rounded-2xl border border-white/10 bg-slate-950/80 px-4 py-2 text-sm text-white"
