@@ -3,61 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
-
-interface AccountSummary {
-  provider: "github" | "linear";
-  username: string | null;
-  scope: string | null;
-}
-
-interface DashboardProject {
-  id: string;
-  githubRepo: string;
-  githubRepoUrl: string | null;
-  linearProjectId: string | null;
-  linearTeamId: string | null;
-  linearProjectName: string | null;
-  lastUsedAt: string | null;
-  isDefault: boolean;
-}
-
-interface GithubRepo {
-  id: string;
-  nameWithOwner: string;
-  url: string;
-  isPrivate: boolean;
-  visibility: string;
-}
-
-interface LinearProjectOption {
-  id: string;
-  name: string;
-  teamId: string;
-  teamKey: string;
-  teamName: string;
-}
-
-interface DashboardState {
-  user: {
-    slackUserId: string;
-    defaultProjectId: string | null;
-  };
-  accounts: AccountSummary[];
-  projects: DashboardProject[];
-  github: {
-    connected: boolean;
-    username: string | null;
-    scopes: string[];
-    permissionWarning: string | null;
-    repos: GithubRepo[];
-  };
-  linear: {
-    connected: boolean;
-    username: string | null;
-    permissionWarning: string | null;
-    projects: LinearProjectOption[];
-  };
-}
+import { trpc } from "@/trpc/react";
 
 const buttonBase =
   "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-300/50";
@@ -68,13 +14,30 @@ export default function AuthPage() {
   const [token, setToken] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dashboard, setDashboard] = useState<DashboardState | null>(null);
-  const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   const [attemptedToken, setAttemptedToken] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [draftMappings, setDraftMappings] = useState<Record<string, string>>({});
+
+  const isAuthenticated = status === "authenticated";
+
+  const dashboardQuery = trpc.dashboard.status.useQuery(undefined, {
+    enabled: isAuthenticated,
+    refetchOnWindowFocus: false,
+  });
+  const dashboard = dashboardQuery.data ?? null;
+  const loadingDashboard = dashboardQuery.isLoading && isAuthenticated;
+
+  const disconnectMutation = trpc.user.disconnectAccount.useMutation({
+    onSuccess: () => dashboardQuery.refetch(),
+  });
+  const setDefaultMutation = trpc.user.setDefaultProject.useMutation({
+    onSuccess: () => dashboardQuery.refetch(),
+  });
+  const linkLinearMutation = trpc.user.linkIntegration.useMutation({
+    onSuccess: () => dashboardQuery.refetch(),
+  });
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -106,65 +69,41 @@ export default function AuthPage() {
   }, [error]);
 
   useEffect(() => {
-    if (status !== "authenticated") {
-      return;
+    if (connected && isAuthenticated) {
+      dashboardQuery.refetch();
     }
+  }, [connected, isAuthenticated]);
 
-    setLoadingDashboard(true);
-    fetch("/api/oauth/status")
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error("Unable to load dashboard");
-        }
-        return (await response.json()) as DashboardState;
-      })
-      .then((data) => {
-        setDashboard(data);
-        setDraftMappings(
-          Object.fromEntries(
-            data.projects.map((project) => [project.id, project.linearProjectId ?? ""]),
-          ),
-        );
-      })
-      .catch(() => {
-        setAuthError("We could not load your connection status. Refresh the page and try again.");
-      })
-      .finally(() => {
-        setLoadingDashboard(false);
-      });
-  }, [status, connected]);
+  useEffect(() => {
+    if (dashboardQuery.error) {
+      setAuthError("We could not load your connection status. Refresh the page and try again.");
+    }
+  }, [dashboardQuery.error]);
+
+  useEffect(() => {
+    if (dashboard) {
+      setDraftMappings(
+        Object.fromEntries(
+          dashboard.projects.map((project) => [project.id, project.linearProjectId ?? ""]),
+        ),
+      );
+    }
+  }, [dashboard]);
 
   const linearProjectLookup = useMemo(
     () => new Map((dashboard?.linear.projects ?? []).map((project) => [project.id, project])),
     [dashboard?.linear.projects],
   );
 
-  async function reloadDashboard() {
-    setLoadingDashboard(true);
-    const response = await fetch("/api/oauth/status");
-    const data = (await response.json()) as DashboardState;
-    setDashboard(data);
-    setDraftMappings(
-      Object.fromEntries(data.projects.map((project) => [project.id, project.linearProjectId ?? ""])),
-    );
-    setLoadingDashboard(false);
-  }
-
   async function disconnect(provider: "github" | "linear") {
     setBusyAction(`disconnect:${provider}`);
-    await fetch(`/api/oauth/disconnect?provider=${provider}`, { method: "POST" });
-    await reloadDashboard();
+    await disconnectMutation.mutateAsync({ provider });
     setBusyAction(null);
   }
 
   async function makeDefault(projectId: string) {
     setBusyAction(`default:${projectId}`);
-    await fetch("/api/projects/default", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId }),
-    });
-    await reloadDashboard();
+    await setDefaultMutation.mutateAsync({ projectId });
     setBusyAction(null);
   }
 
@@ -173,17 +112,13 @@ export default function AuthPage() {
     const selected = linearProjectLookup.get(selectedId);
 
     setBusyAction(`linear:${projectId}`);
-    await fetch("/api/projects/link-linear", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        projectId,
-        linearProjectId: selected?.id ?? null,
-        linearTeamId: selected?.teamId ?? null,
-        linearProjectName: selected ? `${selected.teamKey} · ${selected.name}` : null,
-      }),
+    await linkLinearMutation.mutateAsync({
+      projectId,
+      type: "linear",
+      externalId: selected?.id ?? null,
+      externalTeamId: selected?.teamId ?? null,
+      externalName: selected ? `${selected.teamKey} · ${selected.name}` : null,
     });
-    await reloadDashboard();
     setBusyAction(null);
   }
 

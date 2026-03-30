@@ -8,8 +8,11 @@ const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 export type UserContext = Prisma.UserGetPayload<{
   include: {
     accounts: true;
-    defaultProject: true;
+    defaultProject: {
+      include: { integrations: true };
+    };
     projects: {
+      include: { integrations: true };
       orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }];
     };
   };
@@ -71,8 +74,11 @@ export async function getUserContextBySlackId(slackUserId: string) {
     where: { slackUserId },
     include: {
       accounts: true,
-      defaultProject: true,
+      defaultProject: {
+        include: { integrations: true },
+      },
       projects: {
+        include: { integrations: true },
         orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }],
       },
     },
@@ -84,8 +90,11 @@ export async function getUserContextById(userId: string) {
     where: { id: userId },
     include: {
       accounts: true,
-      defaultProject: true,
+      defaultProject: {
+        include: { integrations: true },
+      },
       projects: {
+        include: { integrations: true },
         orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }],
       },
     },
@@ -251,13 +260,14 @@ export async function setDefaultProject(userId: string, projectId: string) {
   return project;
 }
 
-export async function linkLinearProject(
+export async function linkIntegration(
   userId: string,
   input: {
     projectId: string;
-    linearProjectId?: string | null;
-    linearTeamId?: string | null;
-    linearProjectName?: string | null;
+    type: "linear";
+    externalId?: string | null;
+    externalTeamId?: string | null;
+    externalName?: string | null;
   },
 ) {
   const project = await db.project.findFirst({
@@ -271,12 +281,31 @@ export async function linkLinearProject(
     throw new Error("Project not found");
   }
 
-  return db.project.update({
-    where: { id: input.projectId },
-    data: {
-      linearProjectId: input.linearProjectId ?? null,
-      linearTeamId: input.linearTeamId ?? null,
-      linearProjectName: input.linearProjectName ?? null,
+  if (!input.externalId) {
+    await db.projectIntegration.deleteMany({
+      where: { projectId: input.projectId, type: input.type },
+    });
+    return project;
+  }
+
+  return db.projectIntegration.upsert({
+    where: {
+      projectId_type: {
+        projectId: input.projectId,
+        type: input.type,
+      },
+    },
+    create: {
+      projectId: input.projectId,
+      type: input.type,
+      externalId: input.externalId,
+      externalTeamId: input.externalTeamId ?? null,
+      externalName: input.externalName ?? null,
+    },
+    update: {
+      externalId: input.externalId,
+      externalTeamId: input.externalTeamId ?? null,
+      externalName: input.externalName ?? null,
     },
   });
 }
@@ -523,8 +552,11 @@ export async function listActiveSlackUsers() {
     },
     include: {
       accounts: true,
-      defaultProject: true,
+      defaultProject: {
+        include: { integrations: true },
+      },
       projects: {
+        include: { integrations: true },
         orderBy: [{ lastUsedAt: "desc" }, { updatedAt: "desc" }],
       },
     },
@@ -559,11 +591,20 @@ export async function syncConnectedActivity(user: UserContext, since: Date, repo
 
   const linearAccount = user.accounts.find((account) => account.provider === "linear");
   if (linearAccount) {
-    const projectMappings = user.projects
-      .filter((project) => Boolean(project.linearProjectId))
-      .map((project) => ({
-        githubRepo: project.githubRepo,
-        linearProjectId: project.linearProjectId!,
+    const linearIntegrations = await db.projectIntegration.findMany({
+      where: {
+        projectId: { in: user.projects.map((p) => p.id) },
+        type: "linear",
+        externalId: { not: null },
+      },
+      include: { project: true },
+    });
+
+    const projectMappings = linearIntegrations
+      .filter((i) => i.externalId !== null)
+      .map((i) => ({
+        githubRepo: i.project.githubRepo,
+        linearProjectId: i.externalId!,
       }));
 
     const activity = await fetchLinearActivity(linearAccount, since, projectMappings, normalizedRepo);

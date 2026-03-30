@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
-import { linkLinearProject, setDefaultProject } from "@/server/services/standup";
+import { sendAuthChangeDm } from "@/server/services/slack";
+import { linkIntegration, setDefaultProject } from "@/server/services/standup";
 
 export const userRouter = createTRPCRouter({
   me: protectedProcedure.query(async ({ ctx }) => {
@@ -10,8 +11,11 @@ export const userRouter = createTRPCRouter({
         accounts: {
           orderBy: { provider: "asc" },
         },
-        defaultProject: true,
+        defaultProject: {
+          include: { integrations: true },
+        },
         projects: {
+          include: { integrations: true },
           orderBy: [{ lastUsedAt: "desc" }, { githubRepo: "asc" }],
         },
       },
@@ -41,16 +45,15 @@ export const userRouter = createTRPCRouter({
       });
 
       if (input.provider === "linear") {
-        await ctx.db.project.updateMany({
-          where: { userId: ctx.session.user.id },
-          data: {
-            linearProjectId: null,
-            linearTeamId: null,
-            linearProjectName: null,
+        await ctx.db.projectIntegration.deleteMany({
+          where: {
+            type: "linear",
+            project: { userId: ctx.session.user.id },
           },
         });
       }
 
+      await sendAuthChangeDm(ctx.session.user.slackUserId, input.provider, false);
       return { success: true };
     }),
 
@@ -61,17 +64,18 @@ export const userRouter = createTRPCRouter({
       return { success: true };
     }),
 
-  linkLinearProject: protectedProcedure
+  linkIntegration: protectedProcedure
     .input(
       z.object({
         projectId: z.string(),
-        linearProjectId: z.string().nullish(),
-        linearTeamId: z.string().nullish(),
-        linearProjectName: z.string().nullish(),
+        type: z.enum(["linear"]),
+        externalId: z.string().nullish(),
+        externalTeamId: z.string().nullish(),
+        externalName: z.string().nullish(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      await linkLinearProject(ctx.session.user.id, input);
+      await linkIntegration(ctx.session.user.id, input);
       return { success: true };
     }),
 });
