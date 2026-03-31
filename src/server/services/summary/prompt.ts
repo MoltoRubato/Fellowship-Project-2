@@ -1,12 +1,16 @@
 import { readFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { stringify as stringifyYaml } from "yaml";
 import type { SummaryPeriod, SummaryAnswer, CommitPromptItem, TaskPromptItem } from "./types";
 import { truncateLine } from "./task-processing";
 import type { GithubCommitDetail } from "@/server/services/integrations/github";
+import { fileURLToPath } from "url";
+
+// Convert import.meta.url to __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const promptTemplate = readFileSync(join(__dirname, "prompt.md"), "utf-8");
-
 function formatAnswersForPrompt(answers: SummaryAnswer[]) {
   return stringifyYaml(
     answers.map((answer) => ({
