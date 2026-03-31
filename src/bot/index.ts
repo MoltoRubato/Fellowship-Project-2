@@ -1,7 +1,8 @@
 import "dotenv/config";
 import { App } from "@slack/bolt";
 import { registerAllCommands } from "@/bot/commands";
-import { startActivitySyncJob, startReminderJobs } from "@/bot/jobs";
+import { startActivitySyncJob } from "@/bot/jobs";
+import { startReminderJobs } from "@/bot/reminders";
 
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,

@@ -1,6 +1,22 @@
 import { randomUUID } from "crypto";
 import { db } from "@/server/db";
 
+const SLACK_PROFILE_CACHE_TTL_MS = 1000 * 60 * 30;
+const slackProfileCache = new Map<string, { expiresAt: number; profile: SlackUserProfile | null }>();
+
+type SlackUserProfile = {
+  displayName: string | null;
+  avatarUrl: string | null;
+  timeZone: string | null;
+};
+
+function cacheSlackUserProfile(slackUserId: string, profile: SlackUserProfile | null) {
+  slackProfileCache.set(slackUserId, {
+    expiresAt: Date.now() + SLACK_PROFILE_CACHE_TTL_MS,
+    profile,
+  });
+}
+
 function getAppUrl() {
   return process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
 }
@@ -62,18 +78,31 @@ export async function sendAuthLinkDm(input: {
 }
 
 export async function getSlackUserProfile(slackUserId: string) {
+  const cached = slackProfileCache.get(slackUserId);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.profile;
+  }
+
   const token = process.env.SLACK_BOT_TOKEN;
   if (!token) {
     return null;
   }
 
-  const response = await fetch(`https://slack.com/api/users.info?user=${encodeURIComponent(slackUserId)}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`https://slack.com/api/users.info?user=${encodeURIComponent(slackUserId)}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  } catch {
+    return cached?.profile ?? null;
+  }
 
   if (!response.ok) {
+    cacheSlackUserProfile(slackUserId, null);
     return null;
   }
 
@@ -81,6 +110,7 @@ export async function getSlackUserProfile(slackUserId: string) {
     ok?: boolean;
     user?: {
       name?: string;
+      tz?: string;
       profile?: {
         display_name?: string;
         real_name?: string;
@@ -91,6 +121,7 @@ export async function getSlackUserProfile(slackUserId: string) {
   };
 
   if (!payload.ok || !payload.user) {
+    cacheSlackUserProfile(slackUserId, null);
     return null;
   }
 
@@ -101,10 +132,15 @@ export async function getSlackUserProfile(slackUserId: string) {
     payload.user.name?.trim() ||
     null;
 
-  return {
+  const result = {
     displayName,
     avatarUrl: profile?.image_72 ?? profile?.image_192 ?? null,
+    timeZone: payload.user.tz?.trim() || null,
   };
+
+  cacheSlackUserProfile(slackUserId, result);
+
+  return result;
 }
 
 export async function sendAuthChangeDm(slackUserId: string, provider: "github" | "linear", connected: boolean) {
