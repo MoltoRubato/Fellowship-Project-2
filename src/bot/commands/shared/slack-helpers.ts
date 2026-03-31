@@ -1,5 +1,6 @@
 import type { App } from "@slack/bolt";
-import { ensureSlackUser, getUserContextBySlackId } from "@/server/services/standup";
+import { ensureSlackUser, getUserContextBySlackId, syncGithubProjects } from "@/server/services/standup";
+import { getGithubConnectionSnapshot } from "@/server/services/integrations/github";
 import { sendAuthLinkDm } from "@/server/services/slack";
 
 export async function resolveDefaultRepo(slackUserId: string) {
@@ -9,7 +10,24 @@ export async function resolveDefaultRepo(slackUserId: string) {
 
 export async function loadUserForEntryModal(slackUserId: string, slackTeamId: string) {
   const { created } = await ensureSlackUser(slackUserId, slackTeamId);
-  const user = await getUserContextBySlackId(slackUserId);
+  let user = await getUserContextBySlackId(slackUserId);
+
+  if (user && !user.projects.length) {
+    const github = await getGithubConnectionSnapshot(user.id);
+    if (github.connected && github.repos.length) {
+      await syncGithubProjects(
+        user.id,
+        github.repos.map((repo) => ({
+          id: repo.id,
+          nameWithOwner: repo.nameWithOwner,
+          url: repo.url,
+          updatedAt: repo.updatedAt,
+        })),
+      );
+      user = await getUserContextBySlackId(slackUserId);
+    }
+  }
+
   return { created, user };
 }
 

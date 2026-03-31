@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import { exchangeGithubCode, saveGithubAccount } from "@/server/services/integrations/github";
+import { exchangeGithubCode, saveGithubAccount, getGithubConnectionSnapshot } from "@/server/services/integrations/github";
 import { sendAuthChangeDm } from "@/server/services/slack";
+import { syncGithubProjects } from "@/server/services/standup";
 import { db } from "@/server/db";
 
 export async function GET(request: NextRequest) {
@@ -26,6 +27,20 @@ export async function GET(request: NextRequest) {
     const redirectUri = new URL("/api/oauth/github/callback", baseUrl).toString();
     const account = await exchangeGithubCode(code, redirectUri);
     await saveGithubAccount(user.id, account);
+
+    const github = await getGithubConnectionSnapshot(user.id);
+    if (github.connected) {
+      await syncGithubProjects(
+        user.id,
+        github.repos.map((repo) => ({
+          id: repo.id,
+          nameWithOwner: repo.nameWithOwner,
+          url: repo.url,
+          updatedAt: repo.updatedAt,
+        })),
+      );
+    }
+
     await sendAuthChangeDm(session.user.slackUserId, "github", true);
 
     return NextResponse.redirect(new URL("/auth?connected=github", baseUrl));

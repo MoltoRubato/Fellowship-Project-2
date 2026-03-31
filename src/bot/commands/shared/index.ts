@@ -6,6 +6,8 @@ export {
   REPO_SELECT_BLOCK_ID,
   REPO_SELECT_ACTION_ID,
   SUMMARY_REPO_PICK_ACTION_ID,
+  SUMMARY_QUESTIONS_MODAL_CALLBACK_ID,
+  SUMMARY_QUESTIONS_ACTION_ID,
   REPO_INPUT_BLOCK_ID,
   REPO_INPUT_ACTION_ID,
   MESSAGE_BLOCK_ID,
@@ -32,7 +34,6 @@ export {
 
 export {
   sortProjectsForRepoPicker,
-  getMostRecentlyUpdatedRepo,
   sortRepoNamesForRepoPicker,
 } from "./project-helpers";
 

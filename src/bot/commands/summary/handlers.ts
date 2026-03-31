@@ -6,7 +6,6 @@ import {
   REPO_SELECT_ACTION_ID,
   buildProjectOption,
   sortRepoNamesForRepoPicker,
-  getMostRecentlyUpdatedRepo,
   parseSummaryArgs,
   resolveRepoFromModal,
   loadUserForEntryModal,
@@ -20,6 +19,7 @@ import {
 import {
   getUserContextBySlackId,
   syncConnectedActivity,
+  getLastSelfActionedRepo,
 } from "@/server/services/standup";
 import { determineSummaryRepoSelection } from "./repo-selection";
 import { generateSummaryResult } from "./generate-result";
@@ -171,7 +171,7 @@ export async function handleSummaryRepoPick(args: ActionArgs) {
     const project = projectByRepo.get(repo);
     return project ? buildProjectOption(project) : buildProjectOption({ githubRepo: repo });
   });
-  const defaultRepo = getMostRecentlyUpdatedRepo(user);
+  const defaultRepo = await getLastSelfActionedRepo(slackUserId);
   const initialRepo =
     repoOptions.find((option) => option.value === defaultRepo) ?? repoOptions[0];
 

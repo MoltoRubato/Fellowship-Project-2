@@ -11,14 +11,13 @@ import {
   MESSAGE_ACTION_ID,
   buildProjectOption,
   sortProjectsForRepoPicker,
-  getMostRecentlyUpdatedRepo,
   parseRepoAndText,
   resolveRepoFromModal,
   loadUserForEntryModal,
   maybeSendOnboardingLink,
   sendModalConfirmation,
 } from "./shared/index.js";
-import { logEntry } from "@/server/services/standup";
+import { logEntry, getLastSelfActionedRepo } from "@/server/services/standup";
 import type { ModalEntryType } from "./types.js";
 
 async function openEntryModal(
@@ -35,7 +34,7 @@ async function openEntryModal(
   await ack();
 
   const { created, user } = await loadUserForEntryModal(command.user_id, command.team_id);
-  const defaultRepo = getMostRecentlyUpdatedRepo(user);
+  const defaultRepo = await getLastSelfActionedRepo(command.user_id);
   const parsed = parseRepoAndText(command.text ?? "", defaultRepo);
   const repoOptions = sortProjectsForRepoPicker(user?.projects ?? [])
     .slice(0, 100)

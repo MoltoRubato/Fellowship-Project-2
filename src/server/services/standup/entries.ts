@@ -210,6 +210,28 @@ export async function deleteManualEntry(slackUserId: string, displayId: number, 
   });
 }
 
+export async function getLastSelfActionedRepo(slackUserId: string) {
+  const user = await getUserContextBySlackId(slackUserId);
+  if (!user) {
+    return null;
+  }
+
+  const entry = await db.logEntry.findFirst({
+    where: {
+      userId: user.id,
+      deletedAt: null,
+      source: {
+        in: [EntrySource.manual, EntrySource.dm, EntrySource.github_commit],
+      },
+      projectId: { not: null },
+    },
+    include: { project: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return entry?.project?.githubRepo ?? null;
+}
+
 export async function listRecentManualEntries(slackUserId: string, limit = 10) {
   const user = await getUserContextBySlackId(slackUserId);
   if (!user) {

@@ -15,5 +15,6 @@ export {
   editManualEntry,
   deleteManualEntry,
   listRecentManualEntries,
+  getLastSelfActionedRepo,
 } from "./entries";
 export { syncConnectedActivity } from "./activity-sync";
