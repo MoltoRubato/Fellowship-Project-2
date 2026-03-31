@@ -2,6 +2,11 @@ import cron from "node-cron";
 import type { App } from "@slack/bolt";
 import { getSlackUserProfile } from "@/server/services/slack";
 import { listActiveSlackUsers } from "@/server/services/standup";
+import {
+  getReminderDayForWeekday,
+  normalizeReminderDayKeys,
+  normalizeReminderSlotKeys,
+} from "@/lib/reminders";
 import { REMINDER_CHECK_SCHEDULE, REMINDERS, type ReminderDefinition } from "./config";
 import { getLocalTimeSnapshot } from "./local-time";
 
@@ -20,11 +25,20 @@ async function sendDueReminders(app: App, now: Date) {
   const users = await listActiveSlackUsers();
 
   for (const user of users) {
-    await sendDueReminderForUser(app, user.slackUserId, now);
+    await sendDueReminderForUser(app, user, now);
   }
 }
 
-async function sendDueReminderForUser(app: App, slackUserId: string, now: Date) {
+async function sendDueReminderForUser(
+  app: App,
+  user: Awaited<ReturnType<typeof listActiveSlackUsers>>[number],
+  now: Date,
+) {
+  if (!user.remindersEnabled) {
+    return;
+  }
+
+  const slackUserId = user.slackUserId;
   let profile;
 
   try {
@@ -50,11 +64,19 @@ async function sendDueReminderForUser(app: App, slackUserId: string, now: Date) 
     return;
   }
 
-  if (localTime.weekday === 0 || localTime.weekday === 6) {
+  const configuredDays = normalizeReminderDayKeys(user.reminderDays);
+  const configuredSlots = new Set(normalizeReminderSlotKeys(user.reminderSlots));
+  const localDayKey = getReminderDayForWeekday(localTime.weekday);
+
+  if (!localDayKey || !configuredDays.includes(localDayKey)) {
     return;
   }
 
-  const reminder = REMINDERS.find((entry) => isReminderDue(entry, localTime.hour, localTime.minute));
+  const reminder = REMINDERS.find(
+    (entry) =>
+      configuredSlots.has(entry.key) &&
+      isReminderDue(entry, localTime.hour, localTime.minute),
+  );
 
   if (!reminder) {
     return;

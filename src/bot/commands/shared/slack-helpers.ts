@@ -1,4 +1,5 @@
 import type { App } from "@slack/bolt";
+import type { KnownBlock, Block } from "@slack/types";
 import { ensureSlackUser, getUserContextBySlackId, syncGithubProjects } from "@/server/services/standup";
 import { getGithubConnectionSnapshot } from "@/server/services/integrations/github";
 import { sendAuthLinkDm } from "@/server/services/slack";
@@ -52,6 +53,7 @@ export async function postToResponseUrl(
     response_type?: "ephemeral" | "in_channel";
     replace_original?: boolean;
     delete_original?: boolean;
+    blocks?: (KnownBlock | Block)[];
   },
 ) {
   await fetch(responseUrl, {

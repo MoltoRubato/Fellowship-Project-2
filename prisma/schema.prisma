@@ -36,6 +36,9 @@ model User {
   id               String    @id @default(cuid())
   slackUserId      String    @unique @map("slack_user_id")
   slackTeamId      String    @map("slack_team_id")
+  remindersEnabled Boolean   @default(true) @map("reminders_enabled")
+  reminderDays     String[]  @default(["mon", "tue", "wed", "thu", "fri"]) @map("reminder_days")
+  reminderSlots    String[]  @default(["morning", "evening"]) @map("reminder_slots")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 

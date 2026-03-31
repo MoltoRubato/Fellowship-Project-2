@@ -1,6 +1,12 @@
 export type { UserContext, LoggedEntryInput } from "./types";
 export { isRepoLike, normalizeRepo } from "./repo";
-export { ensureSlackUser, getUserContextBySlackId, getUserContextById, listActiveSlackUsers } from "./users";
+export {
+  ensureSlackUser,
+  getUserContextBySlackId,
+  getUserContextById,
+  listActiveSlackUsers,
+} from "./users";
+export { getReminderSettings, setReminderPreference, updateReminderSchedule } from "./reminders";
 export {
   resolveProjectForUser,
   touchProject,
