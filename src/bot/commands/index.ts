@@ -4,10 +4,9 @@ import entries from "./entries.js";
 import manage from "./manage.js";
 import summary from "./summary/index.js";
 import auth from "./auth.js";
-import dm from "./dm.js";
 import reminders from "./reminders/index.js";
 
-const modules: CommandModule[] = [entries, manage, summary, auth, dm, reminders];
+const modules: CommandModule[] = [entries, manage, summary, auth, reminders];
 
 export function registerAllCommands(app: App) {
   for (const mod of modules) {

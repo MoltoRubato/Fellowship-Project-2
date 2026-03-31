@@ -8,8 +8,6 @@ import {
 import { handleSummarise, handleSummaryRepoPick, handleSummaryModalSubmission } from "./handlers";
 import { handleSummaryQuestionsOpen, handleSummaryQuestionsSubmit } from "./question-modal";
 
-export { handlePendingSummarySessionReply } from "./dm-followup";
-
 const summary: CommandModule = {
   name: "summary",
   register(app) {
