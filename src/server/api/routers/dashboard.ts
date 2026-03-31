@@ -1,12 +1,17 @@
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { getGithubConnectionSnapshot } from "@/server/services/integrations/github";
 import { getLinearConnectionSnapshot } from "@/server/services/integrations/linear";
-import { getUserContextById, syncGithubProjects } from "@/server/services/standup";
+import { getUserContextById, getUserContextBySlackId, ensureSlackUser, syncGithubProjects } from "@/server/services/standup";
 import { TRPCError } from "@trpc/server";
 
 export const dashboardRouter = createTRPCRouter({
   status: protectedProcedure.query(async ({ ctx }) => {
-    const user = await getUserContextById(ctx.session.user.id);
+    let user = await getUserContextById(ctx.session.user.id)
+      ?? await getUserContextBySlackId(ctx.session.user.slackUserId);
+    if (!user) {
+      const { user: created } = await ensureSlackUser(ctx.session.user.slackUserId, "");
+      user = await getUserContextById(created.id);
+    }
     if (!user) {
       throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
     }
