@@ -8,7 +8,7 @@ import {
   createCompletedSummarySession,
   createPendingSummarySession,
 } from "@/server/services/summarySessions";
-import { formatSummaryQuestionsMessage } from "./dm-followup";
+import { sendQuestionsDM } from "./question-modal";
 import type { generateSummaryResult } from "./generate-result";
 
 export async function deliverSummaryOutcome(input: {
@@ -23,7 +23,7 @@ export async function deliverSummaryOutcome(input: {
   const { result } = input;
 
   if (result.summaryResult.questions.length) {
-    await createPendingSummarySession({
+    const session = await createPendingSummarySession({
       userId: result.userId,
       projectId: result.projectId,
       channelId: input.channelId,
@@ -33,17 +33,15 @@ export async function deliverSummaryOutcome(input: {
       questions: result.summaryResult.questions,
     });
 
-    const dmText = formatSummaryQuestionsMessage({
-      updateNo: result.updateNo,
-      repo: input.repo ?? null,
-      summaryPreview: result.summaryResult.summary,
-      questions: result.summaryResult.questions,
-    });
-
-    await input.client.chat.postMessage({
-      channel: input.slackUserId,
-      text: dmText,
-    });
+    await sendQuestionsDM(
+      input.client,
+      input.slackUserId,
+      session.id,
+      result.updateNo,
+      input.repo ?? null,
+      result.summaryResult.summary,
+      result.summaryResult.questions,
+    );
 
     const followUpText = "I need a couple of clarifications before I can post the summary. I sent them in DM.";
     if (input.responseUrl) {

@@ -15,5 +15,8 @@ export const ENTRY_PREVIEW_BLOCK_ID = "entry_preview_block";
 export const EDIT_TEXT_BLOCK_ID = "edit_text_block";
 export const EDIT_TEXT_ACTION_ID = "edit_text_action";
 
+export const SUMMARY_QUESTIONS_MODAL_CALLBACK_ID = "summary_questions_submit";
+export const SUMMARY_QUESTIONS_ACTION_ID = "summary_questions_open";
+
 export const ENTRY_MODAL_RECENT_LIMIT = 12;
 export const ENTRY_MODAL_METADATA_MAX_CHARS = 2900;

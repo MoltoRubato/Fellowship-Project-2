@@ -11,32 +11,7 @@ import {
   updatePendingSummarySession,
 } from "@/server/services/summarySessions";
 import { generateSummaryResult } from "./generate-result";
-
-function formatSummaryQuestionsMessage(input: {
-  updateNo: number;
-  repo?: string | null;
-  summaryPreview?: string | null;
-  questions: SummaryQuestion[];
-}) {
-  const lines = [`Update #${input.updateNo}${input.repo ? ` for ${input.repo}` : ""}`];
-
-  if (input.summaryPreview) {
-    lines.push("", "Preview:", input.summaryPreview);
-  }
-
-  lines.push("", "I need a few clarifications before I can post the summary.");
-
-  input.questions.forEach((question, index) => {
-    lines.push("", `${index + 1}. ${question.message}`);
-    if (question.options.length) {
-      lines.push(`Options: ${question.options.join(" | ")} | Other`);
-    }
-  });
-
-  lines.push("", "Reply in this DM with numbered answers, for example:", "1: Completed", "2: e.g. 1~2 seconds to 50ms");
-
-  return lines.join("\n");
-}
+import { sendQuestionsDM } from "./question-modal";
 
 function parseSummaryAnswersFromMessage(text: string, questions: SummaryQuestion[]) {
   const trimmed = text.trim();
@@ -108,8 +83,6 @@ function mergeSummaryAnswers(existing: SummaryAnswer[], additions: SummaryAnswer
   }));
 }
 
-export { formatSummaryQuestionsMessage };
-
 export async function handlePendingSummarySessionReply(app: App, userId: string, teamId: string, text: string) {
   await ensureSlackUser(userId, teamId);
   const user = await getUserContextBySlackId(userId);
@@ -133,12 +106,7 @@ export async function handlePendingSummarySessionReply(app: App, userId: string,
   if (!newAnswers.length) {
     await app.client.chat.postMessage({
       channel: userId,
-      text: `${formatSummaryQuestionsMessage({
-        updateNo: session.updateNo,
-        repo: session.project?.githubRepo ?? null,
-        summaryPreview: session.summaryPreview,
-        questions,
-      })}\n\nI couldn't match that reply to the numbered questions yet.`,
+      text: "I couldn't match that reply to the questions. Please use the button above to answer them.",
     });
     return true;
   }
@@ -155,15 +123,15 @@ export async function handlePendingSummarySessionReply(app: App, userId: string,
       answers: mergedAnswers,
     });
 
-    await app.client.chat.postMessage({
-      channel: userId,
-      text: formatSummaryQuestionsMessage({
-        updateNo: session.updateNo,
-        repo: session.project?.githubRepo ?? null,
-        summaryPreview: session.summaryPreview,
-        questions: unansweredQuestions,
-      }),
-    });
+    await sendQuestionsDM(
+      app.client,
+      userId,
+      session.id,
+      session.updateNo,
+      session.project?.githubRepo ?? null,
+      session.summaryPreview,
+      unansweredQuestions,
+    );
     return true;
   }
 
@@ -192,15 +160,15 @@ export async function handlePendingSummarySessionReply(app: App, userId: string,
       answers: mergedAnswers,
     });
 
-    await app.client.chat.postMessage({
-      channel: userId,
-      text: formatSummaryQuestionsMessage({
-        updateNo: resolved.updateNo,
-        repo: session.project?.githubRepo ?? null,
-        summaryPreview: resolved.summaryResult.summary,
-        questions: resolved.summaryResult.questions,
-      }),
-    });
+    await sendQuestionsDM(
+      app.client,
+      userId,
+      session.id,
+      resolved.updateNo,
+      session.project?.githubRepo ?? null,
+      resolved.summaryResult.summary,
+      resolved.summaryResult.questions,
+    );
     return true;
   }
 
