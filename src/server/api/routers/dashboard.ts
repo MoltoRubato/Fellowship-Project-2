@@ -36,6 +36,7 @@ export const dashboardRouter = createTRPCRouter({
 
     const refreshedUser = await getUserContextById(user.id);
     const linear = await getLinearConnectionSnapshot(user.id);
+    const visibleProjects = github.connected ? refreshedUser?.projects ?? [] : [];
 
     return {
       user: {
@@ -48,7 +49,7 @@ export const dashboardRouter = createTRPCRouter({
         username: account.username,
         scope: account.scope,
       })),
-      projects: (refreshedUser?.projects ?? []).map((project) => ({
+      projects: visibleProjects.map((project) => ({
         id: project.id,
         githubRepo: project.githubRepo,
         githubRepoUrl: project.githubRepoUrl,

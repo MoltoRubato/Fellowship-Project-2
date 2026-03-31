@@ -139,20 +139,23 @@ export default function AuthPage() {
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
-  useEffect(() => {
-    if (dashboard) {
-      setDraftMappings(
-        Object.fromEntries(
-          dashboard.projects.map((project) => [project.id, project.linearProjectId ?? ""]),
-        ),
-      );
-    }
-  }, [dashboard]);
-
   const linearProjectLookup = useMemo(
     () => new Map((dashboard?.linear.projects ?? []).map((project) => [project.id, project])),
     [dashboard?.linear.projects],
   );
+  const githubConnected = Boolean(dashboard?.github.connected);
+  const visibleProjects = githubConnected ? dashboard?.projects ?? [] : [];
+  const visibleGithubRepos = githubConnected ? dashboard?.github.repos ?? [] : [];
+
+  useEffect(() => {
+    if (dashboard) {
+      setDraftMappings(
+        Object.fromEntries(
+          visibleProjects.map((project) => [project.id, project.linearProjectId ?? ""]),
+        ),
+      );
+    }
+  }, [dashboard, visibleProjects]);
 
   const githubWarning = dashboard?.github.permissionWarning ?? null;
   const linearWarning = dashboard?.linear.permissionWarning ?? null;
@@ -347,10 +350,10 @@ export default function AuthPage() {
 
         {dashboard ? (
           <ProjectRoutingSection
-            projects={dashboard.projects}
-            linearConnected={Boolean(dashboard.linear.connected)}
+            projects={visibleProjects}
+            linearConnected={Boolean(dashboard.linear.connected) && githubConnected}
             linearProjects={dashboard.linear.projects}
-            githubRepos={dashboard.github.repos}
+            githubRepos={visibleGithubRepos}
             draftMappings={draftMappings}
             busyAction={busyAction}
             onDraftChange={(projectId, value) =>
