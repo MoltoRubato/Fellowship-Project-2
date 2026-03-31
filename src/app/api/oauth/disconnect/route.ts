@@ -23,10 +23,12 @@ export async function POST(request: NextRequest) {
   });
 
   if (provider === "linear") {
-    await db.projectIntegration.deleteMany({
-      where: {
-        type: "linear",
-        project: { userId: session.user.id },
+    await db.project.updateMany({
+      where: { userId: session.user.id },
+      data: {
+        linearProjectId: null,
+        linearProjectName: null,
+        linearTeamId: null,
       },
     });
   }

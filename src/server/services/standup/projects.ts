@@ -108,31 +108,16 @@ export async function linkIntegration(
     throw new Error("Project not found");
   }
 
-  if (!input.externalId) {
-    await db.projectIntegration.deleteMany({
-      where: { projectId: input.projectId, type: input.type },
-    });
-    return project;
+  if (input.type !== "linear") {
+    throw new Error("Unsupported integration type");
   }
 
-  return db.projectIntegration.upsert({
-    where: {
-      projectId_type: {
-        projectId: input.projectId,
-        type: input.type,
-      },
-    },
-    create: {
-      projectId: input.projectId,
-      type: input.type,
-      externalId: input.externalId,
-      externalTeamId: input.externalTeamId ?? null,
-      externalName: input.externalName ?? null,
-    },
-    update: {
-      externalId: input.externalId,
-      externalTeamId: input.externalTeamId ?? null,
-      externalName: input.externalName ?? null,
+  return db.project.update({
+    where: { id: project.id },
+    data: {
+      linearProjectId: input.externalId ?? null,
+      linearTeamId: input.externalTeamId ?? null,
+      linearProjectName: input.externalName ?? null,
     },
   });
 }

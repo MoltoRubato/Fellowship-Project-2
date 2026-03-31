@@ -41,18 +41,15 @@ export const dashboardRouter = createTRPCRouter({
         username: account.username,
         scope: account.scope,
       })),
-      projects: (refreshedUser?.projects ?? []).map((project) => {
-        const linearIntegration = project.integrations.find((i) => i.type === "linear");
-        return {
-          id: project.id,
-          githubRepo: project.githubRepo,
-          githubRepoUrl: project.githubRepoUrl,
-          linearProjectId: linearIntegration?.externalId ?? null,
-          linearTeamId: linearIntegration?.externalTeamId ?? null,
-          linearProjectName: linearIntegration?.externalName ?? null,
-          lastUsedAt: project.lastUsedAt,
-        };
-      }),
+      projects: (refreshedUser?.projects ?? []).map((project) => ({
+        id: project.id,
+        githubRepo: project.githubRepo,
+        githubRepoUrl: project.githubRepoUrl,
+        linearProjectId: project.linearProjectId,
+        linearTeamId: project.linearTeamId,
+        linearProjectName: project.linearProjectName,
+        lastUsedAt: project.lastUsedAt,
+      })),
       github,
       linear,
     };

@@ -48,7 +48,7 @@ export default function AuthPage() {
   }, []);
 
   useEffect(() => {
-    if (!paramsLoaded || !token || status !== "unauthenticated" || signingIn || attemptedToken === token) {
+    if (!paramsLoaded || !token || status === "loading" || signingIn || attemptedToken === token) {
       return;
     }
 

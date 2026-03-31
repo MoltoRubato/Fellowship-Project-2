@@ -12,7 +12,6 @@ export const userRouter = createTRPCRouter({
           orderBy: { provider: "asc" },
         },
         projects: {
-          include: { integrations: true },
           orderBy: [{ lastUsedAt: "desc" }, { githubRepo: "asc" }],
         },
       },
@@ -42,10 +41,12 @@ export const userRouter = createTRPCRouter({
       });
 
       if (input.provider === "linear") {
-        await ctx.db.projectIntegration.deleteMany({
-          where: {
-            type: "linear",
-            project: { userId: ctx.session.user.id },
+        await ctx.db.project.updateMany({
+          where: { userId: ctx.session.user.id },
+          data: {
+            linearProjectId: null,
+            linearProjectName: null,
+            linearTeamId: null,
           },
         });
       }

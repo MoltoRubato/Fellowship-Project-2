@@ -4,7 +4,6 @@ export type UserContext = Prisma.UserGetPayload<{
   include: {
     accounts: true;
     projects: {
-      include: { integrations: true };
       orderBy: [{ lastUsedAt: "desc" }, { githubRepoUpdatedAt: "desc" }, { updatedAt: "desc" }];
     };
   };
@@ -13,7 +12,6 @@ export type UserContext = Prisma.UserGetPayload<{
 export const USER_CONTEXT_INCLUDE = {
   accounts: true,
   projects: {
-    include: { integrations: true },
     orderBy: [
       { lastUsedAt: "desc" as const },
       { githubRepoUpdatedAt: "desc" as const },

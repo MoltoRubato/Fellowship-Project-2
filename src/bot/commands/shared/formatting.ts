@@ -7,12 +7,11 @@ export function truncatePlainText(text: string, max = 75) {
 
 type ProjectLike = {
   githubRepo: string;
-  integrations?: Array<{ type: string; externalName?: string | null }>;
+  linearProjectName?: string | null;
 };
 
 function getIntegrationLabel(project: ProjectLike) {
-  const linear = project.integrations?.find((i) => i.type === "linear");
-  return linear?.externalName ?? null;
+  return project.linearProjectName ?? null;
 }
 
 export function formatProjectLabel(project?: ProjectLike | null) {

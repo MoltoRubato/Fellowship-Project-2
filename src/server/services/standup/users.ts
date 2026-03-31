@@ -51,7 +51,6 @@ export async function listActiveSlackUsers() {
     include: {
       accounts: true,
       projects: {
-        include: { integrations: true },
         orderBy: [{ lastUsedAt: "desc" as const }, { updatedAt: "desc" as const }],
       },
     },

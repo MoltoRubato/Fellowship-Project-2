@@ -34,20 +34,11 @@ export async function syncConnectedActivity(user: UserContext, since: Date, repo
 
   const linearAccount = user.accounts.find((account) => account.provider === "linear");
   if (linearAccount) {
-    const linearIntegrations = await db.projectIntegration.findMany({
-      where: {
-        projectId: { in: user.projects.map((p) => p.id) },
-        type: "linear",
-        externalId: { not: null },
-      },
-      include: { project: true },
-    });
-
-    const projectMappings = linearIntegrations
-      .filter((i) => i.externalId !== null)
-      .map((i) => ({
-        githubRepo: i.project.githubRepo,
-        linearProjectId: i.externalId!,
+    const projectMappings = user.projects
+      .filter((project) => project.linearProjectId)
+      .map((project) => ({
+        githubRepo: project.githubRepo,
+        linearProjectId: project.linearProjectId!,
       }));
 
     const activity = await fetchLinearActivity(linearAccount, since, projectMappings, normalizedRepo);
