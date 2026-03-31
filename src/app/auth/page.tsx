@@ -7,6 +7,7 @@ import { trpc } from "@/trpc/react";
 import { ProviderCard } from "./_components/provider-card";
 import { ProjectRoutingSection } from "./_components/project-routing-section";
 import { ThemeToggle } from "./_components/theme-toggle";
+import { useDismissedWarnings } from "./use-dismissed-warnings";
 
 const buttonBase =
   "inline-flex min-w-[144px] items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
@@ -43,13 +44,6 @@ export default function AuthPage() {
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [themeReady, setThemeReady] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [dismissedWarnings, setDismissedWarnings] = useState<{
-    github: string | null;
-    linear: string | null;
-  }>({
-    github: null,
-    linear: null,
-  });
 
   const isAuthenticated = status === "authenticated";
 
@@ -162,10 +156,10 @@ export default function AuthPage() {
 
   const githubWarning = dashboard?.github.permissionWarning ?? null;
   const linearWarning = dashboard?.linear.permissionWarning ?? null;
-  const visibleGithubWarning =
-    githubWarning && dismissedWarnings.github !== githubWarning ? githubWarning : null;
-  const visibleLinearWarning =
-    linearWarning && dismissedWarnings.linear !== linearWarning ? linearWarning : null;
+  const { dismissWarning, visibleWarnings } = useDismissedWarnings({
+    githubWarning,
+    linearWarning,
+  });
 
   async function disconnect(provider: "github" | "linear") {
     setBusyAction(`disconnect:${provider}`);
@@ -250,18 +244,11 @@ export default function AuthPage() {
                 <p className="mt-1 text-sm text-[var(--muted)]">
                 Connect GitHub and Linear, then map repos to the right projects.
                 </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
-                  <span>
-                    {dashboard?.user.slackDisplayName
-                      ? `Connected through Slack as ${dashboard.user.slackDisplayName}`
-                      : "Connected through Slack"}
-                  </span>
-                  {dashboard?.user.slackUserId ? (
-                    <span className="rounded-md bg-[var(--badge-muted-bg)] px-2 py-1 text-xs text-[var(--badge-muted-text)]">
-                      ID {dashboard.user.slackUserId}
-                    </span>
-                  ) : null}
-                </div>
+                <p className="mt-2 text-sm text-[var(--muted)]">
+                  {dashboard?.user.slackDisplayName
+                    ? `Connected through Slack as ${dashboard.user.slackDisplayName}`
+                    : "Connected through Slack"}
+                </p>
               </div>
             </div>
 
@@ -310,10 +297,8 @@ export default function AuthPage() {
             loading={isInitialDashboardLoad}
             connected={Boolean(dashboard?.github.connected)}
             username={dashboard?.github.username ?? null}
-            warning={visibleGithubWarning}
-            onDismissWarning={() =>
-              setDismissedWarnings((current) => ({ ...current, github: githubWarning }))
-            }
+            warning={visibleWarnings.github}
+            onDismissWarning={() => dismissWarning("github", githubWarning)}
             action={
               isInitialDashboardLoad ? (
                 <div aria-hidden="true" className={loadingActionClass} />
@@ -338,10 +323,8 @@ export default function AuthPage() {
             loading={isInitialDashboardLoad}
             connected={Boolean(dashboard?.linear.connected)}
             username={dashboard?.linear.username ?? null}
-            warning={visibleLinearWarning}
-            onDismissWarning={() =>
-              setDismissedWarnings((current) => ({ ...current, linear: linearWarning }))
-            }
+            warning={visibleWarnings.linear}
+            onDismissWarning={() => dismissWarning("linear", linearWarning)}
             action={
               isInitialDashboardLoad ? (
                 <div aria-hidden="true" className={loadingActionClass} />
