@@ -1,5 +1,4 @@
 Use the following values:
-
 {{PROMPT_VALUES}}
 
 I want you to generate a quick summary of {{WORK_LABEL}} work as a Slack message.
@@ -13,23 +12,16 @@ You must analyse these commit messages and identify tasks that have been complet
 The final note should be formatted as such:
 
 Update #{{UPDATE_NO}}
-
 {{SUMMARY_LABEL}}
-
 - Fixed Facebook oauth2 raising missing read scope errors.
-
 - Sped up table search queries from 1~2 seconds to 50ms.
-
 - Polished left dashboard buttons.
 
 In progress:
-
 - Adding Linear as a supported integration.
 
 Blockers:
-
 - Was set back by a misconfigured Facebook oauth setting.
-
 - Awaiting on the design team for a final mockup of the home page.
 
 Do not change the update number and today's date.
@@ -85,4 +77,3 @@ request_commits:
 
 You may also include both a summary to serve as a preview and follow-up questions and commit view requests.
 Answers to questions will be followed up in later prompts in the same context. Any further responses in this context window MUST be formatted as above.
-
