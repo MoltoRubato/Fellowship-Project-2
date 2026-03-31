@@ -105,6 +105,7 @@ export function buildCommitPromptItems(commitDetails: GithubCommitDetail[]): Com
       commit_message: commit.message,
       authors: commit.authors,
       commit_id: commit.sha,
+      commit_url: `https://github.com/${commit.repo}/commit/${commit.sha}`,
     }));
 }
 
@@ -145,6 +146,10 @@ export function buildTaskItems(entries: SummaryLogEntry[]) {
             : entry.source === EntrySource.linear_issue
               ? "linear_issue"
               : "manual",
+      link:
+        entry.source === EntrySource.github_pr || entry.source === EntrySource.linear_issue
+          ? (entry.externalUrl ?? null)
+          : null,
     });
   }
 

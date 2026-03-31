@@ -34,10 +34,12 @@ export interface CommitPromptItem {
   commit_message: string;
   authors: string[];
   commit_id: string;
+  commit_url: string;
 }
 
 export interface TaskPromptItem {
   task: string;
   status_hint: "completed" | "in_progress" | "unknown";
   source: "manual" | "dm" | "github_pr" | "linear_issue";
+  link?: string | null;
 }

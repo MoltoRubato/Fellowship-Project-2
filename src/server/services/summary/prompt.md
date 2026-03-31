@@ -30,6 +30,10 @@ Only include the In progress: and/or Blockers: section if there is any.
 
 Each dot point must be strictly 100 characters or less, but aim for 50 or less.
 
+If a task or commit comes from GitHub or Linear and includes a link URL in the input payload, append this exact suffix at the end of that dot point:
+- `<url|Link>`
+- Example: `- Reviewed OAuth callback handling. - <https://github.com/org/repo/pull/123|Link>`
+
 You must ask any clarifying questions until you are 100% certain on what tasks are still in progress and what tasks are done, and any other questions.
 
 You should also ask questions to ask and encourage the user any numeric descriptions (if the point makes sense to e.g. no need for design changes) such as the '1~2 seconds to 50ms' point. In the questions, write a suggested times and aspects of measurement by taking a guess by writing them as 'e.g. ...'

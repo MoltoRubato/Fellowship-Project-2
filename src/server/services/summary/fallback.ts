@@ -2,6 +2,13 @@ import { EntrySource } from "@prisma/client";
 import type { SummaryLogEntry, SummaryPeriod, SummaryGenerationResult } from "./types";
 import { dedupeOrderedLines, truncateLine, looksInProgress, LOW_SIGNAL_TASK_PATTERN } from "./task-processing";
 
+function appendLink(line: string, url?: string | null) {
+  if (!url) {
+    return line;
+  }
+  return `${line} - <${url}|Link>`;
+}
+
 export function buildFallbackSummary(input: {
   updateNo: number;
   period: SummaryPeriod;
@@ -13,7 +20,7 @@ export function buildFallbackSummary(input: {
 
   for (const entry of input.entries) {
     if (entry.source === EntrySource.github_commit || entry.source === EntrySource.github_pr) {
-      completed.push(entry.title ?? entry.content);
+      completed.push(appendLink(entry.title ?? entry.content, entry.externalUrl));
       continue;
     }
 
@@ -25,10 +32,12 @@ export function buildFallbackSummary(input: {
       continue;
     }
 
+    const lineWithLink = appendLink(entry.content, entry.source === EntrySource.linear_issue ? entry.externalUrl : null);
+
     if (looksInProgress(entry.content)) {
-      inProgress.push(entry.content);
+      inProgress.push(lineWithLink);
     } else {
-      completed.push(entry.content);
+      completed.push(lineWithLink);
     }
   }
 
