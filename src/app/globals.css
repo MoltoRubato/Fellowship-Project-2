@@ -3,35 +3,94 @@
 @tailwind utilities;
 
 :root {
-  --bg: #07111f;
-  --bg-elevated: rgba(13, 25, 46, 0.78);
-  --panel: rgba(12, 27, 49, 0.88);
-  --border: rgba(151, 185, 255, 0.16);
-  --text: #f4f7fb;
-  --muted: #9db0cb;
-  --accent: #7dd3fc;
-  --accent-strong: #0ea5e9;
+  --bg: #f8f9fb;
+  --bg-soft: #eef2f7;
+  --bg-elevated: rgba(255, 255, 255, 0.85);
+  --panel: rgba(255, 255, 255, 0.92);
+  --border: rgba(0, 0, 0, 0.08);
+  --text: #1a1a2e;
+  --muted: #6b7280;
+  --accent: #0ea5e9;
+  --accent-strong: #0284c7;
+  --accent-soft: rgba(14, 165, 233, 0.12);
+  --success: #10b981;
+  --success-soft: rgba(16, 185, 129, 0.12);
+  --warning: #f59e0b;
+  --warning-soft: rgba(245, 158, 11, 0.12);
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.1);
+  --card-bg: rgba(255, 255, 255, 0.7);
+  --card-hover: rgba(255, 255, 255, 0.9);
+  --input-bg: rgba(0, 0, 0, 0.03);
+  --badge-muted-bg: rgba(0, 0, 0, 0.05);
+  --badge-muted-text: #6b7280;
+  --panel-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --bg: #0a0a0f;
+    --bg-soft: #11131a;
+    --bg-elevated: rgba(18, 18, 28, 0.85);
+    --panel: rgba(18, 18, 28, 0.92);
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #e8e8ed;
+    --muted: #8b8b9e;
+    --accent: #60a5fa;
+    --accent-strong: #3b82f6;
+    --accent-soft: rgba(96, 165, 250, 0.14);
+    --success: #34d399;
+    --success-soft: rgba(52, 211, 153, 0.14);
+    --warning: #fbbf24;
+    --warning-soft: rgba(251, 191, 36, 0.14);
+    --danger: #fb7185;
+    --danger-soft: rgba(251, 113, 133, 0.14);
+    --card-bg: rgba(255, 255, 255, 0.04);
+    --card-hover: rgba(255, 255, 255, 0.07);
+    --input-bg: rgba(255, 255, 255, 0.06);
+    --badge-muted-bg: rgba(255, 255, 255, 0.08);
+    --badge-muted-text: #8b8b9e;
+    --panel-shadow: none;
+    color-scheme: dark;
+  }
+}
+
+.dark {
+  --bg: #0a0a0f;
+  --bg-soft: #11131a;
+  --bg-elevated: rgba(18, 18, 28, 0.85);
+  --panel: rgba(18, 18, 28, 0.92);
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #e8e8ed;
+  --muted: #8b8b9e;
+  --accent: #60a5fa;
+  --accent-strong: #3b82f6;
+  --accent-soft: rgba(96, 165, 250, 0.14);
   --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.14);
   --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
   --danger: #fb7185;
+  --danger-soft: rgba(251, 113, 133, 0.14);
+  --card-bg: rgba(255, 255, 255, 0.04);
+  --card-hover: rgba(255, 255, 255, 0.07);
+  --input-bg: rgba(255, 255, 255, 0.06);
+  --badge-muted-bg: rgba(255, 255, 255, 0.08);
+  --badge-muted-text: #8b8b9e;
+  --panel-shadow: none;
+  color-scheme: dark;
 }
 
 html {
   min-height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 32%),
-    radial-gradient(circle at top right, rgba(251, 191, 36, 0.14), transparent 28%),
-    linear-gradient(180deg, #091120 0%, #040915 100%);
+  background: var(--bg);
 }
 
 body {
   min-height: 100vh;
   color: var(--text);
-  background: transparent;
-}
-
-* {
-  border-color: var(--border);
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg-soft) 100%);
 }
 
 a {

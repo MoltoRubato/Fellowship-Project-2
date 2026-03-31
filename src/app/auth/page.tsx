@@ -5,11 +5,25 @@ import { signIn, useSession } from "next-auth/react";
 import { trpc } from "@/trpc/react";
 import { ProviderCard } from "./_components/provider-card";
 import { ProjectRoutingSection } from "./_components/project-routing-section";
-import { GithubReposSection } from "./_components/github-repos-section";
-import { CommandDefaultsSection } from "./_components/command-defaults-section";
+import { ThemeToggle } from "./_components/theme-toggle";
 
 const buttonBase =
-  "inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-300/50";
+  "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+
+const primaryButtonClass =
+  `${buttonBase} bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]`;
+
+const dangerButtonClass =
+  `${buttonBase} border border-[color:var(--border)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]`;
+
+const THEME_STORAGE_KEY = "standup-dashboard-theme";
+
+type ThemeMode = "light" | "dark";
+
+function applyTheme(theme: ThemeMode) {
+  document.documentElement.classList.toggle("dark", theme === "dark");
+  document.documentElement.classList.toggle("light", theme === "light");
+}
 
 export default function AuthPage() {
   const { status } = useSession();
@@ -22,6 +36,9 @@ export default function AuthPage() {
   const [attemptedToken, setAttemptedToken] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [draftMappings, setDraftMappings] = useState<Record<string, string>>({});
+  const [theme, setTheme] = useState<ThemeMode>("light");
+  const [themeReady, setThemeReady] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const isAuthenticated = status === "authenticated";
 
@@ -30,7 +47,7 @@ export default function AuthPage() {
     refetchOnWindowFocus: false,
   });
   const dashboard = dashboardQuery.data ?? null;
-  const loadingDashboard = dashboardQuery.isLoading && isAuthenticated;
+  const loadingDashboard = dashboardQuery.isFetching && isAuthenticated;
 
   const disconnectMutation = trpc.user.disconnectAccount.useMutation({
     onSuccess: () => dashboardQuery.refetch(),
@@ -46,6 +63,29 @@ export default function AuthPage() {
     setError(params.get("error"));
     setParamsLoaded(true);
   }, []);
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const initialTheme =
+      storedTheme === "light" || storedTheme === "dark"
+        ? storedTheme
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+
+    setTheme(initialTheme);
+    applyTheme(initialTheme);
+    setThemeReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!themeReady) {
+      return;
+    }
+
+    applyTheme(theme);
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme, themeReady]);
 
   useEffect(() => {
     if (!paramsLoaded || !token || status === "loading" || signingIn || attemptedToken === token) {
@@ -72,13 +112,33 @@ export default function AuthPage() {
     if (connected && isAuthenticated) {
       dashboardQuery.refetch();
     }
-  }, [connected, isAuthenticated]);
+  }, [connected, dashboardQuery, isAuthenticated]);
 
   useEffect(() => {
     if (dashboardQuery.error) {
       setAuthError("We could not load your connection status. Refresh the page and try again.");
     }
   }, [dashboardQuery.error]);
+
+  useEffect(() => {
+    if (!connected) {
+      return;
+    }
+
+    setNotice(`${connected === "github" ? "GitHub" : "Linear"} connected.`);
+  }, [connected]);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setNotice(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
 
   useEffect(() => {
     if (dashboard) {
@@ -119,8 +179,11 @@ export default function AuthPage() {
   if (!paramsLoaded || status === "loading" || (token && signingIn)) {
     return (
       <main className="flex min-h-screen items-center justify-center p-6">
-        <div className="rounded-[2rem] border border-white/10 bg-[var(--panel)] px-8 py-10 text-center shadow-2xl shadow-sky-950/30 backdrop-blur">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-sky-200/20 border-t-sky-300" />
+        <div
+          className="rounded-xl border border-[color:var(--border)] bg-[var(--panel)] px-6 py-8 text-center"
+          style={{ boxShadow: "var(--panel-shadow)" }}
+        >
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-[color:var(--border)] border-t-[color:var(--accent)]" />
           <p className="text-sm text-[var(--muted)]">Authenticating your Slack handoff...</p>
         </div>
       </main>
@@ -130,10 +193,12 @@ export default function AuthPage() {
   if (authError || (status === "unauthenticated" && !token)) {
     return (
       <main className="flex min-h-screen items-center justify-center p-6">
-        <section className="w-full max-w-xl rounded-[2rem] border border-white/10 bg-[var(--bg-elevated)] p-8 shadow-2xl shadow-black/25 backdrop-blur">
-          <p className="mb-3 text-sm uppercase tracking-[0.3em] text-sky-200/80">Standup Bot</p>
-          <h1 className="text-3xl font-semibold">Connect from Slack first</h1>
-          <p className="mt-4 text-base leading-7 text-[var(--muted)]">
+        <section
+          className="w-full max-w-md rounded-xl border border-[color:var(--border)] bg-[var(--panel)] p-6"
+          style={{ boxShadow: "var(--panel-shadow)" }}
+        >
+          <h1 className="text-2xl font-semibold">Connect from Slack first</h1>
+          <p className="mt-3 text-sm text-[var(--muted)]">
             {authError ?? "Run /auth in Slack and open the secure link it sends you in DM."}
           </p>
         </section>
@@ -142,117 +207,107 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="min-h-screen px-4 py-10 sm:px-6">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <section className="rounded-[2rem] border border-white/10 bg-[var(--bg-elevated)] p-6 shadow-2xl shadow-black/20 backdrop-blur sm:p-8">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
-              <p className="text-sm uppercase tracking-[0.3em] text-sky-200/80">Standup Bot Dashboard</p>
-              <h1 className="mt-3 text-4xl font-semibold tracking-tight">Link accounts and shape your standup context</h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--muted)]">
-                This page is intentionally narrow: connect GitHub and Linear, inspect what each OAuth account can see,
-                pick the default repo Slack commands should use, and map Linear projects onto GitHub repos.
+    <main className="min-h-screen px-4 py-8 sm:px-6">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+        <section
+          className="rounded-xl border border-[color:var(--border)] bg-[var(--panel)] p-5"
+          style={{ boxShadow: "var(--panel-shadow)" }}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold">Connections</h1>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                Connect GitHub and Linear, then map repos to the right projects.
+              </p>
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                Signed in as{" "}
+                <span className="font-medium text-[var(--text)]">
+                  {dashboard?.user.slackUserId ?? "Loading..."}
+                </span>
               </p>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-slate-950/50 px-5 py-4 text-sm text-[var(--muted)]">
-              <div className="font-medium text-white">Slack identity</div>
-              <div className="mt-1">{dashboard?.user.slackUserId ?? "Loading..."}</div>
-              <div className="mt-2 text-xs text-sky-200/80">Reminders run at 09:00 and 17:00 UTC for active users.</div>
-            </div>
+            <ThemeToggle
+              isDark={theme === "dark"}
+              onToggle={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+            />
           </div>
 
-          {connected ? (
-            <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
-              {connected === "github" ? "GitHub" : "Linear"} connected successfully.
+          {notice ? (
+            <div
+              className="mt-4 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+              style={{
+                borderColor: "var(--success-soft)",
+                backgroundColor: "var(--success-soft)",
+                color: "var(--success)",
+              }}
+            >
+              <span>{notice}</span>
+              <button
+                type="button"
+                aria-label="Dismiss notification"
+                className="text-current opacity-80 transition-opacity hover:opacity-100"
+                onClick={() => setNotice(null)}
+              >
+                <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <path
+                    d="M6 6l12 12M18 6L6 18"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeWidth="1.8"
+                  />
+                </svg>
+              </button>
             </div>
           ) : null}
 
           {loadingDashboard ? (
-            <div className="mt-6 text-sm text-[var(--muted)]">Loading integrations and visible projects...</div>
+            <p className="mt-3 text-sm text-[var(--muted)]">Refreshing dashboard...</p>
           ) : null}
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-2">
+        <section className="grid gap-4 md:grid-cols-2">
           <ProviderCard
             title="GitHub"
-            description="Read commits, PRs, and visible repos."
             connected={Boolean(dashboard?.github.connected)}
             username={dashboard?.github.username ?? null}
             warning={dashboard?.github.permissionWarning ?? null}
             action={
               dashboard?.github.connected ? (
                 <button
-                  className={`${buttonBase} border border-rose-400/25 bg-rose-400/10 text-rose-100 hover:bg-rose-400/20`}
+                  className={dangerButtonClass}
                   disabled={busyAction === "disconnect:github"}
                   onClick={() => disconnect("github")}
                 >
                   Disconnect
                 </button>
               ) : (
-                <a className={`${buttonBase} bg-white text-slate-950 hover:bg-slate-100`} href="/api/oauth/github">
+                <a className={primaryButtonClass} href="/api/oauth/github">
                   Connect GitHub
                 </a>
               )
-            }
-            detail={
-              <div className="space-y-3">
-                <p className="text-sm text-[var(--muted)]">
-                  {dashboard?.github.connected
-                    ? `Connected as @${dashboard.github.username}`
-                    : "GitHub is the source of truth for repos. Connect it before wiring Linear projects."}
-                </p>
-                {dashboard?.github.scopes.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {dashboard.github.scopes.map((scope) => (
-                      <span
-                        key={scope}
-                        className="rounded-full border border-sky-300/15 bg-sky-300/10 px-3 py-1 text-xs text-sky-100"
-                      >
-                        {scope}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                <p className="text-xs text-[var(--muted)]">
-                  Visible repos: <span className="text-white">{dashboard?.github.repos.length ?? 0}</span>
-                </p>
-              </div>
             }
           />
 
           <ProviderCard
             title="Linear"
-            description="Read assigned issue updates for mapped projects."
             connected={Boolean(dashboard?.linear.connected)}
             username={dashboard?.linear.username ?? null}
             warning={dashboard?.linear.permissionWarning ?? null}
             action={
               dashboard?.linear.connected ? (
                 <button
-                  className={`${buttonBase} border border-rose-400/25 bg-rose-400/10 text-rose-100 hover:bg-rose-400/20`}
+                  className={dangerButtonClass}
                   disabled={busyAction === "disconnect:linear"}
                   onClick={() => disconnect("linear")}
                 >
                   Disconnect
                 </button>
               ) : (
-                <a className={`${buttonBase} bg-sky-400 text-slate-950 hover:bg-sky-300`} href="/api/oauth/linear">
+                <a className={primaryButtonClass} href="/api/oauth/linear">
                   Connect Linear
                 </a>
               )
-            }
-            detail={
-              <div className="space-y-3">
-                <p className="text-sm text-[var(--muted)]">
-                  {dashboard?.linear.connected
-                    ? `Connected as ${dashboard.linear.username ?? "your Linear account"}`
-                    : "Linear projects become available for mapping once the account is connected."}
-                </p>
-                <p className="text-xs text-[var(--muted)]">
-                  Visible Linear projects: <span className="text-white">{dashboard?.linear.projects.length ?? 0}</span>
-                </p>
-              </div>
             }
           />
         </section>
@@ -261,6 +316,7 @@ export default function AuthPage() {
           projects={dashboard?.projects ?? []}
           linearConnected={Boolean(dashboard?.linear.connected)}
           linearProjects={dashboard?.linear.projects ?? []}
+          githubRepos={dashboard?.github.repos ?? []}
           draftMappings={draftMappings}
           busyAction={busyAction}
           onDraftChange={(projectId, value) =>
@@ -268,11 +324,6 @@ export default function AuthPage() {
           }
           onSave={saveLinearMapping}
         />
-
-        <section className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-          <GithubReposSection repos={dashboard?.github.repos ?? []} />
-          <CommandDefaultsSection />
-        </section>
       </div>
     </main>
   );

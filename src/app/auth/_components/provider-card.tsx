@@ -4,38 +4,49 @@ import type { ReactNode } from "react";
 
 export function ProviderCard(props: {
   title: string;
-  description: string;
   connected: boolean;
   username: string | null;
   warning: string | null;
   action: ReactNode;
-  detail: ReactNode;
 }) {
   return (
-    <article className="rounded-[2rem] border border-white/10 bg-[var(--bg-elevated)] p-6 shadow-xl shadow-black/20 backdrop-blur sm:p-8">
+    <article
+      className="rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)] p-5"
+      style={{ boxShadow: "var(--panel-shadow)" }}
+    >
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-semibold">{props.title}</h2>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm text-[var(--muted)]">
             <span
-              className={`rounded-full px-3 py-1 text-xs ${
-                props.connected
-                  ? "border border-emerald-300/20 bg-emerald-300/10 text-emerald-100"
-                  : "border border-white/10 bg-white/5 text-[var(--muted)]"
-              }`}
-            >
-              {props.connected ? "Connected" : "Not connected"}
-            </span>
+              aria-hidden="true"
+              className="h-2.5 w-2.5 rounded-full"
+              style={{
+                backgroundColor: props.connected ? "var(--success)" : "var(--badge-muted-text)",
+              }}
+            />
+            <span>{props.connected ? "Connected" : "Not connected"}</span>
           </div>
-          <p className="mt-2 text-sm leading-7 text-[var(--muted)]">{props.description}</p>
+          <h2 className="mt-2 text-2xl font-semibold">{props.title}</h2>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            {props.connected
+              ? props.username
+                ? `Connected as ${props.username}`
+                : "Account connected"
+              : "No account connected"}
+          </p>
         </div>
         {props.action}
       </div>
 
-      <div className="mt-5">{props.detail}</div>
-
       {props.warning ? (
-        <div className="mt-5 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+        <div
+          className="mt-4 rounded-lg border px-3 py-2 text-sm"
+          style={{
+            borderColor: "var(--warning-soft)",
+            backgroundColor: "var(--warning-soft)",
+            color: "var(--warning)",
+          }}
+        >
           {props.warning}
         </div>
       ) : null}
