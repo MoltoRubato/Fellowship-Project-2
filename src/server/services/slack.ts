@@ -61,6 +61,52 @@ export async function sendAuthLinkDm(input: {
   return link;
 }
 
+export async function getSlackUserProfile(slackUserId: string) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) {
+    return null;
+  }
+
+  const response = await fetch(`https://slack.com/api/users.info?user=${encodeURIComponent(slackUserId)}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = (await response.json()) as {
+    ok?: boolean;
+    user?: {
+      name?: string;
+      profile?: {
+        display_name?: string;
+        real_name?: string;
+        image_72?: string;
+        image_192?: string;
+      };
+    };
+  };
+
+  if (!payload.ok || !payload.user) {
+    return null;
+  }
+
+  const profile = payload.user.profile;
+  const displayName =
+    profile?.display_name?.trim() ||
+    profile?.real_name?.trim() ||
+    payload.user.name?.trim() ||
+    null;
+
+  return {
+    displayName,
+    avatarUrl: profile?.image_72 ?? profile?.image_192 ?? null,
+  };
+}
+
 export async function sendAuthChangeDm(slackUserId: string, provider: "github" | "linear", connected: boolean) {
   const action = connected ? "connected" : "disconnected";
   await postSlackMessage(

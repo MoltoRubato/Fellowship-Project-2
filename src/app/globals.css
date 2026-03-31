@@ -91,6 +91,7 @@ body {
   min-height: 100vh;
   color: var(--text);
   background: linear-gradient(180deg, var(--bg) 0%, var(--bg-soft) 100%);
+  font-family: "Avenir Next", "Segoe UI Variable", "Segoe UI", sans-serif;
 }
 
 a {

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { trpc } from "@/trpc/react";
@@ -8,13 +9,16 @@ import { ProjectRoutingSection } from "./_components/project-routing-section";
 import { ThemeToggle } from "./_components/theme-toggle";
 
 const buttonBase =
-  "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex min-w-[144px] items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 
 const primaryButtonClass =
   `${buttonBase} bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]`;
 
 const dangerButtonClass =
   `${buttonBase} border border-[color:var(--border)] bg-transparent text-[var(--danger)] hover:bg-[var(--danger-soft)]`;
+
+const loadingActionClass =
+  "h-10 min-w-[144px] rounded-lg border border-[color:var(--border)] bg-[var(--input-bg)]";
 
 const THEME_STORAGE_KEY = "standup-dashboard-theme";
 
@@ -39,6 +43,13 @@ export default function AuthPage() {
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [themeReady, setThemeReady] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [dismissedWarnings, setDismissedWarnings] = useState<{
+    github: string | null;
+    linear: string | null;
+  }>({
+    github: null,
+    linear: null,
+  });
 
   const isAuthenticated = status === "authenticated";
 
@@ -47,7 +58,7 @@ export default function AuthPage() {
     refetchOnWindowFocus: false,
   });
   const dashboard = dashboardQuery.data ?? null;
-  const loadingDashboard = dashboardQuery.isFetching && isAuthenticated;
+  const isInitialDashboardLoad = isAuthenticated && !dashboard && dashboardQuery.isLoading;
 
   const disconnectMutation = trpc.user.disconnectAccount.useMutation({
     onSuccess: () => dashboardQuery.refetch(),
@@ -109,12 +120,6 @@ export default function AuthPage() {
   }, [error]);
 
   useEffect(() => {
-    if (connected && isAuthenticated) {
-      dashboardQuery.refetch();
-    }
-  }, [connected, dashboardQuery, isAuthenticated]);
-
-  useEffect(() => {
     if (dashboardQuery.error) {
       setAuthError("We could not load your connection status. Refresh the page and try again.");
     }
@@ -155,10 +160,20 @@ export default function AuthPage() {
     [dashboard?.linear.projects],
   );
 
+  const githubWarning = dashboard?.github.permissionWarning ?? null;
+  const linearWarning = dashboard?.linear.permissionWarning ?? null;
+  const visibleGithubWarning =
+    githubWarning && dismissedWarnings.github !== githubWarning ? githubWarning : null;
+  const visibleLinearWarning =
+    linearWarning && dismissedWarnings.linear !== linearWarning ? linearWarning : null;
+
   async function disconnect(provider: "github" | "linear") {
     setBusyAction(`disconnect:${provider}`);
-    await disconnectMutation.mutateAsync({ provider });
-    setBusyAction(null);
+    try {
+      await disconnectMutation.mutateAsync({ provider });
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function saveLinearMapping(projectId: string) {
@@ -166,14 +181,17 @@ export default function AuthPage() {
     const selected = linearProjectLookup.get(selectedId);
 
     setBusyAction(`linear:${projectId}`);
-    await linkLinearMutation.mutateAsync({
-      projectId,
-      type: "linear",
-      externalId: selected?.id ?? null,
-      externalTeamId: selected?.teamId ?? null,
-      externalName: selected ? `${selected.teamKey} · ${selected.name}` : null,
-    });
-    setBusyAction(null);
+    try {
+      await linkLinearMutation.mutateAsync({
+        projectId,
+        type: "linear",
+        externalId: selected?.id ?? null,
+        externalTeamId: selected?.teamId ?? null,
+        externalName: selected ? `${selected.teamKey} · ${selected.name}` : null,
+      });
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   if (!paramsLoaded || status === "loading" || (token && signingIn)) {
@@ -208,23 +226,43 @@ export default function AuthPage() {
 
   return (
     <main className="min-h-screen px-4 py-8 sm:px-6">
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
         <section
           className="rounded-xl border border-[color:var(--border)] bg-[var(--panel)] p-5"
           style={{ boxShadow: "var(--panel-shadow)" }}
         >
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <h1 className="text-2xl font-semibold">Connections</h1>
-              <p className="mt-1 text-sm text-[var(--muted)]">
+            <div className="flex min-w-0 items-start gap-4">
+              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-[color:var(--border)]">
+                <Image
+                  alt="Standup Bot icon"
+                  className="object-cover"
+                  fill
+                  priority
+                  sizes="56px"
+                  src="/standup-bot-icon.png"
+                />
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-[var(--muted)]">Standup Bot</p>
+                <h1 className="mt-1 text-xl font-semibold">Connections</h1>
+                <p className="mt-1 text-sm text-[var(--muted)]">
                 Connect GitHub and Linear, then map repos to the right projects.
-              </p>
-              <p className="mt-2 text-sm text-[var(--muted)]">
-                Signed in as{" "}
-                <span className="font-medium text-[var(--text)]">
-                  {dashboard?.user.slackUserId ?? "Loading..."}
-                </span>
-              </p>
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[var(--muted)]">
+                  <span>
+                    {dashboard?.user.slackDisplayName
+                      ? `Connected through Slack as ${dashboard.user.slackDisplayName}`
+                      : "Connected through Slack"}
+                  </span>
+                  {dashboard?.user.slackUserId ? (
+                    <span className="rounded-md bg-[var(--badge-muted-bg)] px-2 py-1 text-xs text-[var(--badge-muted-text)]">
+                      ID {dashboard.user.slackUserId}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
             <ThemeToggle
@@ -261,19 +299,25 @@ export default function AuthPage() {
             </div>
           ) : null}
 
-          {loadingDashboard ? (
-            <p className="mt-3 text-sm text-[var(--muted)]">Refreshing dashboard...</p>
+          {isInitialDashboardLoad ? (
+            <p className="mt-3 text-sm text-[var(--muted)]">Loading connection status...</p>
           ) : null}
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2">
+        <section className="grid gap-5 md:grid-cols-2">
           <ProviderCard
             title="GitHub"
+            loading={isInitialDashboardLoad}
             connected={Boolean(dashboard?.github.connected)}
             username={dashboard?.github.username ?? null}
-            warning={dashboard?.github.permissionWarning ?? null}
+            warning={visibleGithubWarning}
+            onDismissWarning={() =>
+              setDismissedWarnings((current) => ({ ...current, github: githubWarning }))
+            }
             action={
-              dashboard?.github.connected ? (
+              isInitialDashboardLoad ? (
+                <div aria-hidden="true" className={loadingActionClass} />
+              ) : dashboard?.github.connected ? (
                 <button
                   className={dangerButtonClass}
                   disabled={busyAction === "disconnect:github"}
@@ -291,11 +335,17 @@ export default function AuthPage() {
 
           <ProviderCard
             title="Linear"
+            loading={isInitialDashboardLoad}
             connected={Boolean(dashboard?.linear.connected)}
             username={dashboard?.linear.username ?? null}
-            warning={dashboard?.linear.permissionWarning ?? null}
+            warning={visibleLinearWarning}
+            onDismissWarning={() =>
+              setDismissedWarnings((current) => ({ ...current, linear: linearWarning }))
+            }
             action={
-              dashboard?.linear.connected ? (
+              isInitialDashboardLoad ? (
+                <div aria-hidden="true" className={loadingActionClass} />
+              ) : dashboard?.linear.connected ? (
                 <button
                   className={dangerButtonClass}
                   disabled={busyAction === "disconnect:linear"}
@@ -312,18 +362,28 @@ export default function AuthPage() {
           />
         </section>
 
-        <ProjectRoutingSection
-          projects={dashboard?.projects ?? []}
-          linearConnected={Boolean(dashboard?.linear.connected)}
-          linearProjects={dashboard?.linear.projects ?? []}
-          githubRepos={dashboard?.github.repos ?? []}
-          draftMappings={draftMappings}
-          busyAction={busyAction}
-          onDraftChange={(projectId, value) =>
-            setDraftMappings((current) => ({ ...current, [projectId]: value }))
-          }
-          onSave={saveLinearMapping}
-        />
+        {dashboard ? (
+          <ProjectRoutingSection
+            projects={dashboard.projects}
+            linearConnected={Boolean(dashboard.linear.connected)}
+            linearProjects={dashboard.linear.projects}
+            githubRepos={dashboard.github.repos}
+            draftMappings={draftMappings}
+            busyAction={busyAction}
+            onDraftChange={(projectId, value) =>
+              setDraftMappings((current) => ({ ...current, [projectId]: value }))
+            }
+            onSave={saveLinearMapping}
+          />
+        ) : (
+          <section
+            className="rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)] p-5"
+            style={{ boxShadow: "var(--panel-shadow)" }}
+          >
+            <h2 className="text-lg font-semibold">Project Routing</h2>
+            <p className="mt-2 text-sm text-[var(--muted)]">Loading repo mappings...</p>
+          </section>
+        )}
       </div>
     </main>
   );

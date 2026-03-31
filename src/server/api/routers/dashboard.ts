@@ -1,6 +1,7 @@
 import { createTRPCRouter, protectedProcedure } from "@/server/api/trpc";
 import { getGithubConnectionSnapshot } from "@/server/services/integrations/github";
 import { getLinearConnectionSnapshot } from "@/server/services/integrations/linear";
+import { getSlackUserProfile } from "@/server/services/slack";
 import { getUserContextById, getUserContextBySlackId, ensureSlackUser, syncGithubProjects } from "@/server/services/standup";
 import { TRPCError } from "@trpc/server";
 
@@ -16,7 +17,11 @@ export const dashboardRouter = createTRPCRouter({
       throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
     }
 
-    const github = await getGithubConnectionSnapshot(user.id);
+    const [github, slackProfile] = await Promise.all([
+      getGithubConnectionSnapshot(user.id),
+      getSlackUserProfile(user.slackUserId),
+    ]);
+
     if (github.connected) {
       await syncGithubProjects(
         user.id,
@@ -35,6 +40,8 @@ export const dashboardRouter = createTRPCRouter({
     return {
       user: {
         slackUserId: user.slackUserId,
+        slackDisplayName: slackProfile?.displayName ?? null,
+        slackAvatarUrl: slackProfile?.avatarUrl ?? null,
       },
       accounts: (refreshedUser?.accounts ?? []).map((account) => ({
         provider: account.provider,

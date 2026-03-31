@@ -72,7 +72,7 @@ export function ProjectRoutingSection(props: ProjectRoutingProps) {
         onClick={() => setIsExpanded((current) => !current)}
       >
         <div>
-          <h2 className="text-2xl font-semibold">Project Routing</h2>
+          <h2 className="text-lg font-semibold">Project Routing</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
             {props.projects.length} repo{props.projects.length === 1 ? "" : "s"}
           </p>
