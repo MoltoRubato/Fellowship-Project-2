@@ -1,6 +1,12 @@
 import { EntrySource } from "@prisma/client";
 import type { SummaryLogEntry, SummaryPeriod, SummaryGenerationResult } from "./types";
-import { dedupeOrderedLines, truncateLine, looksInProgress, LOW_SIGNAL_TASK_PATTERN } from "./task-processing";
+import {
+  dedupeOrderedLines,
+  truncateLine,
+  looksInProgress,
+  LOW_SIGNAL_TASK_PATTERN,
+  buildLinearTaskText,
+} from "./task-processing";
 
 function truncateKeepingSlackLink(line: string, max = 100) {
   const linkMatch = line.match(/\s-\sLink$/i);
@@ -44,9 +50,16 @@ export function buildFallbackSummary(input: {
       continue;
     }
 
-    const lineWithLink = appendLink(entry.content, entry.source === EntrySource.linear_issue ? entry.externalUrl : null);
+    const fallbackLine =
+      entry.source === EntrySource.linear_issue
+        ? buildLinearTaskText(entry).replace(/^Linear:\s*/, "")
+        : entry.content;
+    const lineWithLink = appendLink(
+      fallbackLine,
+      entry.source === EntrySource.linear_issue ? entry.externalUrl : null,
+    );
 
-    if (looksInProgress(entry.content)) {
+    if (looksInProgress(fallbackLine)) {
       inProgress.push(lineWithLink);
     } else {
       completed.push(lineWithLink);

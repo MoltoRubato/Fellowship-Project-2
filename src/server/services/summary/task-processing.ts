@@ -36,7 +36,7 @@ function stripLeadingLinearIdentifier(value: string, identifier?: string | null)
   return value.replace(new RegExp(`^${identifier}\\s+`, "i"), "").trim();
 }
 
-function buildLinearTaskText(entry: SummaryLogEntry) {
+export function buildLinearTaskText(entry: SummaryLogEntry) {
   const title = entry.title?.trim() ?? "";
   const content = entry.content.trim();
   const identifier = extractLinearIdentifier(title) ?? extractLinearIdentifier(content);

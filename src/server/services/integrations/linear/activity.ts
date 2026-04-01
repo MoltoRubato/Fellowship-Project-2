@@ -141,31 +141,41 @@ export async function fetchLinearActivity(
     },
   );
 
-  const mappingByProjectId = new Map(projectMappings.map((mapping) => [mapping.linearProjectId, mapping.githubRepo]));
+  const reposByProjectId = new Map<string, string[]>();
+  for (const mapping of projectMappings) {
+    const repos = reposByProjectId.get(mapping.linearProjectId) ?? [];
+    if (!repos.includes(mapping.githubRepo)) {
+      repos.push(mapping.githubRepo);
+      reposByProjectId.set(mapping.linearProjectId, repos);
+    }
+  }
+
   const results: LinearActivityItem[] = [];
 
   for (const issue of data.viewer.assignedIssues.nodes) {
     const linearProjectId = issue.project?.id ?? "";
-    const repo = mappingByProjectId.get(linearProjectId);
-    if (!repo) {
-      continue;
-    }
-
-    if (repoFilter && repo.toLowerCase() !== repoFilter.toLowerCase()) {
+    const repos = reposByProjectId.get(linearProjectId);
+    if (!repos?.length) {
       continue;
     }
 
     const createdAt = new Date(issue.updatedAt);
     const state = issue.state?.name ?? "Updated";
-    results.push({
-      repo,
-      title: `${issue.identifier} ${issue.title}`,
-      content: `${issue.identifier} moved to ${state}`,
-      source: "linear_issue",
-      externalId: `linear-issue:${issue.id}:${issue.updatedAt}`,
-      externalUrl: issue.url,
-      createdAt,
-    });
+    for (const repo of repos) {
+      if (repoFilter && repo.toLowerCase() !== repoFilter.toLowerCase()) {
+        continue;
+      }
+
+      results.push({
+        repo,
+        title: `${issue.identifier} ${issue.title}`,
+        content: `${issue.identifier} moved to ${state}`,
+        source: "linear_issue",
+        externalId: `linear-issue:${issue.id}:${issue.updatedAt}`,
+        externalUrl: issue.url,
+        createdAt,
+      });
+    }
   }
 
   return results.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());

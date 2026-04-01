@@ -12,12 +12,14 @@ export async function createLogEntryForUser(
   input: Omit<LoggedEntryInput, "slackUserId" | "slackTeamId">,
 ) {
   const project = await resolveProjectForUser(user.id, input.repo);
+  const projectId = project?.id ?? null;
   const displayDateKey = await getSlackDateKey(user.slackUserId, input.createdAt ?? new Date());
   const entry = await db.$transaction(async (tx) => {
     if (input.externalId) {
       const existing = await tx.logEntry.findFirst({
         where: {
           userId: user.id,
+          projectId,
           source: input.source ?? EntrySource.manual,
           externalId: input.externalId,
         },
@@ -35,7 +37,7 @@ export async function createLogEntryForUser(
         userId: user.id,
         displayId,
         displayDateKey,
-        projectId: project?.id ?? null,
+        projectId,
         content: input.content,
         entryType: input.entryType,
         source: input.source ?? EntrySource.manual,

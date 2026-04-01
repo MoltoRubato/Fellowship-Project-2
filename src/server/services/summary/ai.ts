@@ -4,8 +4,25 @@ import type { GithubCommitDetail } from "@/server/services/integrations/github";
 import { buildAiPrompt } from "./prompt";
 import { parseSummaryResponse } from "./parser";
 
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getModelNamesToTry() {
+  const configuredModel = process.env.GOOGLE_AI_MODEL ?? DEFAULT_GEMINI_MODEL;
+  return configuredModel === DEFAULT_GEMINI_MODEL
+    ? [configuredModel]
+    : [configuredModel, DEFAULT_GEMINI_MODEL];
+}
+
+function isMissingModelError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /404/i.test(error.message) && /models\/.+(not found|is not found)/i.test(error.message);
 }
 
 export async function runAiSummary(input: {
@@ -23,53 +40,65 @@ export async function runAiSummary(input: {
     return null;
   }
 
-  const modelName = process.env.GOOGLE_AI_MODEL ?? "gemini-2.5-flash";
-  const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
-    model: modelName,
-  });
-
-  let requestedCommitDetails: GithubCommitDetail[] = [];
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const prompt = buildAiPrompt({
-      updateNo: input.updateNo,
-      blockers: input.blockers,
-      commits: input.commits,
-      tasks: input.tasks,
-      period: input.period,
-      answers: input.answers,
-      requestedCommitDetails,
+  for (const modelName of getModelNamesToTry()) {
+    const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({
+      model: modelName,
     });
+    let requestedCommitDetails: GithubCommitDetail[] = [];
 
-    try {
-      const response = await model.generateContent(prompt);
-      const parsed = parseSummaryResponse(response.response.text());
-      const unseenRequestedCommits = parsed.requestCommits.filter(
-        (sha) => input.commitDetails.some((commit) => commit.sha === sha) && !requestedCommitDetails.some((commit) => commit.sha === sha),
-      );
-
-      if (unseenRequestedCommits.length) {
-        requestedCommitDetails = [
-          ...requestedCommitDetails,
-          ...input.commitDetails.filter((commit) => unseenRequestedCommits.includes(commit.sha)),
-        ];
-        continue;
-      }
-
-      return parsed;
-    } catch (error) {
-      const status =
-        typeof error === "object" && error !== null && "status" in error ? Number((error as { status?: unknown }).status) : null;
-      if ((status === 429 || status === 503) && attempt < 2) {
-        await sleep(1500 * (attempt + 1));
-        continue;
-      }
-
-      console.error("Gemini summary generation failed", {
-        modelName,
-        error: error instanceof Error ? error.message : String(error),
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const prompt = buildAiPrompt({
+        updateNo: input.updateNo,
+        blockers: input.blockers,
+        commits: input.commits,
+        tasks: input.tasks,
+        period: input.period,
+        answers: input.answers,
+        requestedCommitDetails,
       });
-      return null;
+
+      try {
+        const response = await model.generateContent(prompt);
+        const parsed = parseSummaryResponse(response.response.text());
+        const unseenRequestedCommits = parsed.requestCommits.filter(
+          (sha) =>
+            input.commitDetails.some((commit) => commit.sha === sha) &&
+            !requestedCommitDetails.some((commit) => commit.sha === sha),
+        );
+
+        if (unseenRequestedCommits.length) {
+          requestedCommitDetails = [
+            ...requestedCommitDetails,
+            ...input.commitDetails.filter((commit) => unseenRequestedCommits.includes(commit.sha)),
+          ];
+          continue;
+        }
+
+        return parsed;
+      } catch (error) {
+        const status =
+          typeof error === "object" && error !== null && "status" in error
+            ? Number((error as { status?: unknown }).status)
+            : null;
+        if ((status === 429 || status === 503) && attempt < 2) {
+          await sleep(1500 * (attempt + 1));
+          continue;
+        }
+
+        if (isMissingModelError(error) && modelName !== DEFAULT_GEMINI_MODEL) {
+          console.warn("Configured Gemini model is unavailable, retrying with default model", {
+            configuredModel: modelName,
+            fallbackModel: DEFAULT_GEMINI_MODEL,
+          });
+          break;
+        }
+
+        console.error("Gemini summary generation failed", {
+          modelName,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      }
     }
   }
 
