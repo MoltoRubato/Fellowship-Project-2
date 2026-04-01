@@ -5,7 +5,7 @@ import { runAiSummary } from "./ai";
 import { buildFallbackSummary } from "./fallback";
 
 const BULLET_LINE_PATTERN = /^\s*(?:[-•]\s+|\d+[.)]\s+)/;
-const EXISTING_LINK_PATTERN = /<https?:\/\/[^|>]+\|[^>]+>/i;
+const EXISTING_LINK_PATTERN = /<https?:\/\/[^|>]+\|[^>]+>|\s-\sLink\b/i;
 
 function normalizeText(value: string) {
   return value
@@ -50,7 +50,6 @@ function extractLinearTicket(title?: string | null) {
 }
 
 type LinkCandidate = {
-  url: string;
   tokens: string[];
 };
 
@@ -84,7 +83,6 @@ function buildLinkCandidates(entries: SummaryLogEntry[]): LinkCandidate[] {
         .filter((token, index, array) => token.length >= 4 && array.indexOf(token) === index);
 
       return {
-        url: entry.externalUrl as string,
         tokens,
       };
     });
@@ -100,7 +98,9 @@ function appendMissingSourceLinks(summary: string, entries: SummaryLogEntry[]) {
   const updated = lines.map((line) => {
     const cleanedLine = line
       .replace(/\s-\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
-      .replace(/\s<https?:\/\/[^>]*\.\.\.\s*$/i, "");
+      .replace(/\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
+      .replace(/\s-\s<https?:\/\/[^|>]+\|[^>]+>\s*$/i, " - Link")
+      .replace(/\s-\shttps?:\/\/\S+\s*$/i, " - Link");
     const trimmed = cleanedLine.trim();
     if (!BULLET_LINE_PATTERN.test(trimmed)) {
       return cleanedLine;
@@ -122,7 +122,7 @@ function appendMissingSourceLinks(summary: string, entries: SummaryLogEntry[]) {
       return cleanedLine;
     }
 
-    return `${cleanedLine} - <${match.url}|Link>`;
+    return `${cleanedLine} - Link`;
   });
 
   return updated.join("\n");

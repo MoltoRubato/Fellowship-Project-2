@@ -29,11 +29,10 @@ Do not change the update number and today's date.
 Only include the In progress: and/or Blockers: section if there is any.
 
 Each dot point text (excluding any link suffix) must be strictly 100 characters or less, but aim for 50 or less.
-Never truncate URLs. If a dot point has a link, always include the full `<url|Link>` suffix.
 
-If a task or commit comes from GitHub or Linear and includes a link URL in the input payload, append this exact suffix at the end of that dot point:
-- `<url|Link>`
-- Example: `- Reviewed OAuth callback handling. - <https://github.com/org/repo/pull/123|Link>`
+If a task or commit comes from GitHub or Linear and includes link metadata in the input payload, append this exact suffix at the end of that dot point:
+- `Link`
+- Example: `- Reviewed OAuth callback handling. - Link`
 
 You must ask any clarifying questions until you are 100% certain on what tasks are still in progress and what tasks are done, and any other questions.
 

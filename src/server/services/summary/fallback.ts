@@ -3,7 +3,7 @@ import type { SummaryLogEntry, SummaryPeriod, SummaryGenerationResult } from "./
 import { dedupeOrderedLines, truncateLine, looksInProgress, LOW_SIGNAL_TASK_PATTERN } from "./task-processing";
 
 function truncateKeepingSlackLink(line: string, max = 100) {
-  const linkMatch = line.match(/\s-\s<https?:\/\/[^|>]+\|Link>$/i);
+  const linkMatch = line.match(/\s-\sLink$/i);
   if (!linkMatch) {
     return truncateLine(line, max);
   }
@@ -18,7 +18,7 @@ function appendLink(line: string, url?: string | null) {
   if (!url) {
     return line;
   }
-  return `${line} - <${url}|Link>`;
+  return `${line} - Link`;
 }
 
 export function buildFallbackSummary(input: {
