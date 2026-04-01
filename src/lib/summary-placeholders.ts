@@ -1,6 +1,11 @@
 const PLACEHOLDER_TOKEN = "(?:x|y|z|n)";
+const PLACEHOLDER_SEQUENCE = ["X", "Y", "Z", "N"] as const;
 const MEASUREMENT_UNIT =
   "(?:%|percent(?:age)?|ms|millisecond(?:s)?|s|sec(?:ond)?s?|m(?:in(?:ute)?s?)?|h(?:our)?s?|kb|mb|gb|tb|bytes?|rows?|files?|items?|records?|queries?|requests?|users?|tickets?|issues?|projects?|repos?)";
+const VALUE_WITH_OPTIONAL_UNIT_PATTERN = new RegExp(
+  `(\\d+(?:[.,]\\d+)?(?:~\\d+(?:[.,]\\d+)?)?)(\\s*(?:${MEASUREMENT_UNIT}))?`,
+  "gi",
+);
 
 const PLACEHOLDER_VALUE_PATTERN = new RegExp(
   [
@@ -50,7 +55,7 @@ function looksLikeFullReplacement(value: string) {
   }
 
   const wordCount = trimmed.split(/\s+/).length;
-  return wordCount >= 5 || /\b(from|to|reduced|improved|sped|cut|raised|dropped|trimmed)\b/i.test(trimmed);
+  return wordCount >= 5 || /\b(reduced|improved|sped|cut|raised|dropped|trimmed|optimized|optimised|rewrote|changed|made)\b/i.test(trimmed);
 }
 
 export function containsSummaryPlaceholderValue(value: string) {
@@ -59,6 +64,34 @@ export function containsSummaryPlaceholderValue(value: string) {
 
 export function optionNeedsActualValue(option: string) {
   return containsSummaryPlaceholderValue(option);
+}
+
+export function normalizeOptionToPlaceholders(option: string) {
+  let replacementIndex = 0;
+  let replaced = false;
+
+  const normalized = option.replace(VALUE_WITH_OPTIONAL_UNIT_PATTERN, (_match, _value, rawUnit = "") => {
+    const placeholder = PLACEHOLDER_SEQUENCE[Math.min(replacementIndex, PLACEHOLDER_SEQUENCE.length - 1)];
+    replacementIndex += 1;
+    replaced = true;
+
+    const unit = String(rawUnit ?? "").trim();
+    if (!unit) {
+      return placeholder;
+    }
+
+    if (unit.startsWith("%")) {
+      return `${placeholder}%`;
+    }
+
+    return `${placeholder} ${unit}`;
+  });
+
+  if (!replaced) {
+    return option;
+  }
+
+  return cleanupSentence(normalized);
 }
 
 export function applyCustomValueToPlaceholderOption(option: string, customValue: string) {
@@ -72,7 +105,16 @@ export function applyCustomValueToPlaceholderOption(option: string, customValue:
   }
 
   const substituted = option
-    .replace(RANGE_PLACEHOLDER_PATTERN, trimmedCustomValue)
+    .replace(RANGE_PLACEHOLDER_PATTERN, (match) => {
+      const normalizedMatch = match.trim().toLowerCase();
+      if (trimmedCustomValue.toLowerCase().startsWith("from ")) {
+        return trimmedCustomValue;
+      }
+
+      return normalizedMatch.startsWith("from ")
+        ? `from ${trimmedCustomValue}`
+        : trimmedCustomValue;
+    })
     .replace(MEASURED_PLACEHOLDER_PATTERN, trimmedCustomValue)
     .replace(CONNECTED_PLACEHOLDER_PATTERN, (match) => {
       const prefixMatch = match.match(/^(by|from|to|at|under|over|around|about|down to|up to)\b/i);

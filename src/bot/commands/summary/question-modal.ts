@@ -5,6 +5,7 @@ import {
   SUMMARY_QUESTIONS_MODAL_CALLBACK_ID,
 } from "../shared/index.js";
 import { filterUnansweredSummaryQuestions } from "@/lib/summary-questions";
+import { optionNeedsActualValue } from "@/lib/summary-placeholders";
 import {
   getUserContextBySlackId,
 } from "@/server/services/standup";
@@ -55,8 +56,9 @@ export async function sendQuestionsDM(
 
   for (let i = 0; i < questions.length; i++) {
     const question = questions[i]!;
+    const needsActualValue = question.options.some((option) => optionNeedsActualValue(option));
     const optionsHint = question.options.length
-      ? `\n_Options: ${question.options.join(" | ")} | Other_`
+      ? `\n_Options: ${question.options.join(" | ")} | Other_${needsActualValue ? "\n_Choose the best pattern, then type the real value in the answer modal._" : ""}`
       : "";
 
     const buttonValue: QuestionButtonValue = { sessionId, questionIndex: i };

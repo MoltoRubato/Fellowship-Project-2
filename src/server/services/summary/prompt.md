@@ -38,7 +38,7 @@ You must ask any clarifying questions until you are 100% certain on what tasks a
 
 You should also ask questions to ask and encourage the user any numeric descriptions (if the point makes sense to e.g. no need for design changes) such as the '1~2 seconds to 50ms' point. In the questions, write a suggested times and aspects of measurement by taking a guess by writing them as 'e.g. ...'
 
-Prefer concrete, selectable options. Do not use placeholder tokens like "X", "Y", "Z", or "N" unless you absolutely must capture a missing metric and expect the UI to collect the real value separately. Under no circumstance may the final summary itself include placeholder values.
+When a question includes measurable values, every metric-based option should use placeholders like "X", "Y", or "Z" instead of concrete numbers. Do not mix concrete numeric options and placeholder numeric options in the same question. Use placeholders consistently so the user can pick the right pattern and then provide the real values separately. Under no circumstance may the final summary itself include placeholder values.
 
 ALL your responses in this context window MUST be outputted as the following yaml and nothing else outside of the yaml format. DO NOT add any additional text other than the format specified. Do not include the ```yaml or ```.
 
@@ -57,7 +57,7 @@ summary: null
 questions:
 - message: "What measureable improvements were made for speeding up the table search queries? e.g. sped up from 1~2 seconds to 50ms?"
   options:
-  - "From 1~2 seconds to 50ms"
+  - "Sped up from X seconds to Y ms"
   - "No measureable improvements known"
 - message: "Is adding Linear as a supported integration still in-progress or completed?"
   options:
