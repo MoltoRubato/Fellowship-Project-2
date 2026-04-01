@@ -4,6 +4,7 @@ import type { SummaryQuestion, SummaryAnswer } from "@/server/services/summary";
 import {
   SUMMARY_QUESTIONS_MODAL_CALLBACK_ID,
 } from "../shared/index.js";
+import { filterUnansweredSummaryQuestions } from "@/lib/summary-questions";
 import {
   getUserContextBySlackId,
 } from "@/server/services/standup";
@@ -14,8 +15,11 @@ import {
   expireSummarySession,
 } from "@/server/services/summarySessions";
 import { generateSummaryResult } from "./generate-result";
-
-const OTHER_VALUE = "__other__";
+import {
+  buildSingleQuestionBlocks,
+  mergeAnswers,
+  resolveSingleQuestionAnswer,
+} from "./question-modal-helpers";
 
 interface QuestionButtonValue {
   sessionId: string;
@@ -177,14 +181,13 @@ export async function handleSummaryQuestionsOpen(args: ActionArgs) {
 
 export async function handleSummaryQuestionsSubmit(args: ViewArgs) {
   const { ack, body, client, view } = args;
-  await ack();
-
   const metadata = JSON.parse(view.private_metadata || "{}") as QuestionModalMetadata;
   const slackUserId = body.user.id;
   const teamId = body.team?.id ?? "";
 
   const user = await getUserContextBySlackId(slackUserId);
   if (!user) {
+    await ack();
     await client.chat.postMessage({
       channel: slackUserId,
       text: "I couldn't find your profile. Please run `/auth` and try again.",
@@ -194,6 +197,7 @@ export async function handleSummaryQuestionsSubmit(args: ViewArgs) {
 
   const session = await getPendingSummarySession(user.id);
   if (!session) {
+    await ack();
     await client.chat.postMessage({
       channel: slackUserId,
       text: "This session has expired. Please run `/summarise` again.",
@@ -210,15 +214,25 @@ export async function handleSummaryQuestionsSubmit(args: ViewArgs) {
 
   const question = questions[metadata.questionIndex];
   if (!question) {
+    await ack();
     return;
   }
 
-  const answer = extractSingleAnswer(view.state?.values ?? {}, question);
+  const answerResult = resolveSingleQuestionAnswer(view.state?.values ?? {}, question);
 
-  if (!answer) {
+  if (!answerResult.ok) {
+    await ack({
+      response_action: "errors",
+      errors: {
+        [answerResult.blockId]: answerResult.error,
+      },
+    });
     return;
   }
 
+  await ack();
+
+  const answer = answerResult.answer;
   const mergedAnswers = mergeAnswers(existingAnswers, [answer]);
 
   // Update the button DM to show the answer (remove button)
@@ -275,10 +289,15 @@ export async function handleSummaryQuestionsSubmit(args: ViewArgs) {
     return;
   }
 
-  if (resolved.summaryResult.questions.length) {
+  const followUpQuestions = filterUnansweredSummaryQuestions(
+    resolved.summaryResult.questions,
+    mergedAnswers,
+  );
+
+  if (followUpQuestions.length) {
     await updatePendingSummarySession(session.id, {
       summaryPreview: resolved.summaryResult.summary,
-      questions: resolved.summaryResult.questions,
+      questions: followUpQuestions,
       answers: mergedAnswers,
     });
 
@@ -289,130 +308,52 @@ export async function handleSummaryQuestionsSubmit(args: ViewArgs) {
       resolved.updateNo,
       session.project?.githubRepo ?? null,
       resolved.summaryResult.summary,
-      resolved.summaryResult.questions,
+      followUpQuestions,
     );
     return;
   }
 
-  await completeSummarySession(session.id);
-
-  if (resolved.summaryResult.summary) {
+  if (!resolved.summaryResult.summary) {
+    await expireSummarySession(session.id);
     await client.chat.postMessage({
-      channel: session.channelId,
-      text: resolved.summaryResult.summary,
+      channel: slackUserId,
+      text: "I couldn't generate a final summary after those answers. Please run `/summarise` again.",
     });
+    return;
   }
 
-  await client.chat.postMessage({
-    channel: slackUserId,
-    text: `Posted Update #${resolved.updateNo}${session.project?.githubRepo ? ` for ${session.project.githubRepo}` : ""}.`,
+  await postCompletedSummary(client, {
+    sessionId: session.id,
+    channelId: session.channelId,
+    slackUserId,
+    updateNo: resolved.updateNo,
+    repo: session.project?.githubRepo ?? null,
+    summary: resolved.summaryResult.summary,
   });
 }
 
-// --- Helpers ---
+async function postCompletedSummary(
+  client: App["client"],
+  input: {
+    sessionId: string;
+    channelId: string;
+    slackUserId: string;
+    updateNo: number;
+    repo: string | null;
+    summary: string;
+  },
+) {
+  await completeSummarySession(input.sessionId);
 
-function buildSingleQuestionBlocks(question: SummaryQuestion) {
-  if (question.options.length) {
-    return [
-      {
-        type: "input" as const,
-        block_id: "sq_choice",
-        label: { type: "plain_text" as const, text: question.message },
-        element: {
-          type: "radio_buttons" as const,
-          action_id: "sq_choice_action",
-          options: [
-            ...question.options.map((opt) => ({
-              text: { type: "plain_text" as const, text: opt },
-              value: opt,
-            })),
-            {
-              text: { type: "plain_text" as const, text: "Other" },
-              value: OTHER_VALUE,
-            },
-          ],
-        },
-      },
-      {
-        type: "input" as const,
-        block_id: "sq_other",
-        label: { type: "plain_text" as const, text: "If Other, please specify:" },
-        optional: true,
-        element: {
-          type: "plain_text_input" as const,
-          action_id: "sq_other_action",
-          placeholder: { type: "plain_text" as const, text: "Your answer..." },
-        },
-      },
-    ];
-  }
+  await client.chat.postMessage({
+    channel: input.channelId,
+    text: input.summary,
+  });
 
-  return [
-    {
-      type: "input" as const,
-      block_id: "sq_text",
-      label: { type: "plain_text" as const, text: question.message },
-      element: {
-        type: "plain_text_input" as const,
-        action_id: "sq_text_action",
-        placeholder: { type: "plain_text" as const, text: "Your answer..." },
-      },
-    },
-  ];
-}
-
-function extractSingleAnswer(
-  values: Record<string, Record<string, unknown>>,
-  question: SummaryQuestion,
-): SummaryAnswer | null {
-  if (question.options.length) {
-    const radioState = values.sq_choice?.sq_choice_action as
-      | { selected_option?: { value?: string } }
-      | undefined;
-    const selectedValue = radioState?.selected_option?.value;
-
-    if (selectedValue === OTHER_VALUE) {
-      const otherState = values.sq_other?.sq_other_action as
-        | { value?: string }
-        | undefined;
-      const otherText = otherState?.value?.trim();
-      return {
-        message: question.message,
-        answer: otherText || "Other",
-      };
-    }
-
-    if (selectedValue) {
-      return {
-        message: question.message,
-        answer: selectedValue,
-      };
-    }
-
-    return null;
-  }
-
-  const textState = values.sq_text?.sq_text_action as
-    | { value?: string }
-    | undefined;
-  const textValue = textState?.value?.trim();
-
-  if (textValue) {
-    return {
-      message: question.message,
-      answer: textValue,
-    };
-  }
-
-  return null;
-}
-
-function mergeAnswers(existing: SummaryAnswer[], additions: SummaryAnswer[]): SummaryAnswer[] {
-  const merged = new Map(existing.map((a) => [a.message, a.answer]));
-  for (const a of additions) {
-    merged.set(a.message, a.answer);
-  }
-  return [...merged.entries()].map(([message, answer]) => ({ message, answer }));
+  await client.chat.postMessage({
+    channel: input.slackUserId,
+    text: `Posted Update #${input.updateNo}${input.repo ? ` for ${input.repo}` : ""}.`,
+  });
 }
 
 async function updateDMToAnswered(

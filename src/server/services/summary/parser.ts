@@ -1,5 +1,9 @@
 import { parse as parseYaml } from "yaml";
 import type { ParsedSummaryResponse, SummaryQuestion } from "./types";
+import {
+  dedupeSummaryQuestions,
+  sanitizeSummaryQuestionOptions,
+} from "@/lib/summary-questions";
 
 function cleanYamlPayload(text: string) {
   return text
@@ -7,16 +11,6 @@ function cleanYamlPayload(text: string) {
     .replace(/^```\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
-}
-
-function normaliseQuestionOptions(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [] as string[];
-  }
-
-  return value
-    .map((option) => String(option ?? "").trim())
-    .filter(Boolean);
 }
 
 export function parseSummaryResponse(text: string): ParsedSummaryResponse {
@@ -27,7 +21,8 @@ export function parseSummaryResponse(text: string): ParsedSummaryResponse {
   };
 
   const questions = Array.isArray(parsed?.questions)
-    ? parsed.questions
+    ? dedupeSummaryQuestions(
+        parsed.questions
         .map((question) => {
           const candidate = question as { message?: unknown; options?: unknown };
           const message = String(candidate?.message ?? "").trim();
@@ -37,10 +32,11 @@ export function parseSummaryResponse(text: string): ParsedSummaryResponse {
 
           return {
             message,
-            options: normaliseQuestionOptions(candidate?.options),
+            options: sanitizeSummaryQuestionOptions(candidate?.options),
           };
         })
-        .filter((question): question is SummaryQuestion => Boolean(question))
+        .filter((question): question is SummaryQuestion => Boolean(question)),
+      )
     : [];
 
   const requestCommits = Array.isArray(parsed?.request_commits)
