@@ -2,6 +2,18 @@ import { EntrySource } from "@prisma/client";
 import type { SummaryLogEntry, SummaryPeriod, SummaryGenerationResult } from "./types";
 import { dedupeOrderedLines, truncateLine, looksInProgress, LOW_SIGNAL_TASK_PATTERN } from "./task-processing";
 
+function truncateKeepingSlackLink(line: string, max = 100) {
+  const linkMatch = line.match(/\s-\s<https?:\/\/[^|>]+\|Link>$/i);
+  if (!linkMatch) {
+    return truncateLine(line, max);
+  }
+
+  const linkSuffix = linkMatch[0];
+  const textPart = line.slice(0, -linkSuffix.length).trimEnd();
+  const maxTextLength = Math.max(20, max - linkSuffix.length - 1);
+  return `${truncateLine(textPart, maxTextLength)}${linkSuffix}`;
+}
+
 function appendLink(line: string, url?: string | null) {
   if (!url) {
     return line;
@@ -43,8 +55,8 @@ export function buildFallbackSummary(input: {
 
   const workLabel = input.period === "week" ? "This week's work:" : "Today's work:";
   const blockerLines = dedupeOrderedLines(input.blockers.map((entry) => truncateLine(entry.content)));
-  const completedLines = dedupeOrderedLines(completed.map((line) => truncateLine(line)));
-  const inProgressLines = dedupeOrderedLines(inProgress.map((line) => truncateLine(line)));
+  const completedLines = dedupeOrderedLines(completed.map((line) => truncateKeepingSlackLink(line)));
+  const inProgressLines = dedupeOrderedLines(inProgress.map((line) => truncateKeepingSlackLink(line)));
 
   const lines = [`Update #${input.updateNo}`, "", workLabel];
   for (const line of completedLines.length ? completedLines : ["No completed work logged."]) {

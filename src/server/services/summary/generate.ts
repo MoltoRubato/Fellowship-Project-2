@@ -98,12 +98,15 @@ function appendMissingSourceLinks(summary: string, entries: SummaryLogEntry[]) {
 
   const lines = summary.split("\n");
   const updated = lines.map((line) => {
-    const trimmed = line.trim();
+    const cleanedLine = line
+      .replace(/\s-\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
+      .replace(/\s<https?:\/\/[^>]*\.\.\.\s*$/i, "");
+    const trimmed = cleanedLine.trim();
     if (!BULLET_LINE_PATTERN.test(trimmed)) {
-      return line;
+      return cleanedLine;
     }
-    if (EXISTING_LINK_PATTERN.test(line)) {
-      return line;
+    if (EXISTING_LINK_PATTERN.test(cleanedLine)) {
+      return cleanedLine;
     }
 
     const normalizedLine = normalizeText(trimmed);
@@ -116,10 +119,10 @@ function appendMissingSourceLinks(summary: string, entries: SummaryLogEntry[]) {
     );
 
     if (!match) {
-      return line;
+      return cleanedLine;
     }
 
-    return `${line} - <${match.url}|Link>`;
+    return `${cleanedLine} - <${match.url}|Link>`;
   });
 
   return updated.join("\n");
