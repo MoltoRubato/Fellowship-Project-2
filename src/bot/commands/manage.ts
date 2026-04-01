@@ -130,7 +130,7 @@ async function openEditModal(args: CommandArgs) {
   if (!entries.length) {
     await respond({
       response_type: "ephemeral",
-      text: "No editable entries found yet.",
+      text: "No editable entries found for today.",
     });
     return;
   }
@@ -163,7 +163,7 @@ async function openDeleteModal(args: CommandArgs) {
   if (!entries.length) {
     await respond({
       response_type: "ephemeral",
-      text: "No deletable entries found yet.",
+      text: "No deletable entries found for today.",
     });
     return;
   }
@@ -220,7 +220,7 @@ async function handleEditModalSubmission(args: ViewArgs) {
       client,
       channelId,
       body.user.id,
-      "I couldn't find that editable entry anymore.",
+      "I couldn't find a matching editable entry for today anymore.",
       metadata.responseUrl,
     );
     return;
@@ -257,7 +257,7 @@ async function handleDeleteModalSubmission(args: ViewArgs) {
       client,
       channelId,
       body.user.id,
-      "I couldn't find that deletable entry anymore.",
+      "I couldn't find a matching deletable entry for today anymore.",
       metadata.responseUrl,
     );
     return;

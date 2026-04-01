@@ -56,6 +56,7 @@ export const dashboardRouter = createTRPCRouter({
         linearProjectId: project.linearProjectId,
         linearTeamId: project.linearTeamId,
         linearProjectName: project.linearProjectName,
+        githubRepoUpdatedAt: project.githubRepoUpdatedAt,
         lastUsedAt: project.lastUsedAt,
       })),
       github,

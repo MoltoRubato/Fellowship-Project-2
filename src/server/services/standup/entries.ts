@@ -9,6 +9,10 @@ import type { LoggedEntryInput } from "./types";
 import { resolveProjectForUser, touchProject } from "./projects";
 import { ensureSlackUser, getUserContextBySlackId } from "./users";
 
+async function getCurrentSlackDateKey(slackUserId: string) {
+  return getSlackDateKey(slackUserId, new Date());
+}
+
 export async function createLogEntryForUser(
   user: { id: string; slackUserId: string },
   input: Omit<LoggedEntryInput, "slackUserId" | "slackTeamId">,
@@ -167,12 +171,14 @@ export async function editManualEntryById(slackUserId: string, entryId: string, 
   if (!user) {
     return null;
   }
+  const currentDateKey = await getCurrentSlackDateKey(slackUserId);
 
   const entry = await db.logEntry.findFirst({
     where: {
       userId: user.id,
       id: entryId,
       deletedAt: null,
+      displayDateKey: currentDateKey,
       source: {
         in: [EntrySource.manual, EntrySource.dm],
       },
@@ -202,12 +208,14 @@ export async function deleteManualEntryById(slackUserId: string, entryId: string
   if (!user) {
     return null;
   }
+  const currentDateKey = await getCurrentSlackDateKey(slackUserId);
 
   const entry = await db.logEntry.findFirst({
     where: {
       userId: user.id,
       id: entryId,
       deletedAt: null,
+      displayDateKey: currentDateKey,
       source: {
         in: [EntrySource.manual, EntrySource.dm],
       },
@@ -259,11 +267,13 @@ export async function listRecentManualEntries(slackUserId: string, limit = 10) {
   if (!user) {
     return [];
   }
+  const currentDateKey = await getCurrentSlackDateKey(slackUserId);
 
   return db.logEntry.findMany({
     where: {
       userId: user.id,
       deletedAt: null,
+      displayDateKey: currentDateKey,
       source: {
         in: [EntrySource.manual, EntrySource.dm],
       },

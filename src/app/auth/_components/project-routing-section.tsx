@@ -11,12 +11,22 @@ const secondaryButtonClass =
 const primaryButtonClass =
   `${buttonBase} bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]`;
 
+type ProjectSort = "recent" | "alpha-asc" | "alpha-desc";
+
+function compareDateDesc(left?: string | Date | null, right?: string | Date | null) {
+  const leftTime = left ? new Date(left).getTime() : 0;
+  const rightTime = right ? new Date(right).getTime() : 0;
+  return rightTime - leftTime;
+}
+
 interface ProjectRoutingProps {
   projects: Array<{
     id: string;
     githubRepo: string;
     githubRepoUrl: string | null;
     linearProjectName: string | null;
+    githubRepoUpdatedAt?: string | Date | null;
+    lastUsedAt?: string | Date | null;
   }>;
   linearConnected: boolean;
   linearProjects: Array<{
@@ -30,6 +40,7 @@ interface ProjectRoutingProps {
     url: string;
     visibility: string;
     isPrivate?: boolean;
+    updatedAt?: string | null;
   }>;
   draftMappings: Record<string, string>;
   busyAction: string | null;
@@ -40,6 +51,7 @@ interface ProjectRoutingProps {
 export function ProjectRoutingSection(props: ProjectRoutingProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [sort, setSort] = useState<ProjectSort>("recent");
 
   const githubRepoLookup = useMemo(
     () =>
@@ -49,11 +61,44 @@ export function ProjectRoutingSection(props: ProjectRoutingProps) {
           {
             url: repo.url,
             visibility: repo.visibility || (repo.isPrivate ? "private" : "public"),
+            updatedAt: repo.updatedAt ?? null,
           },
         ]),
       ),
     [props.githubRepos],
   );
+
+  const sortedProjects = useMemo(() => {
+    return props.projects
+      .slice()
+      .sort((left, right) => {
+        if (sort === "alpha-asc") {
+          return left.githubRepo.localeCompare(right.githubRepo);
+        }
+
+        if (sort === "alpha-desc") {
+          return right.githubRepo.localeCompare(left.githubRepo);
+        }
+
+        const leftRepo = githubRepoLookup.get(left.githubRepo.toLowerCase());
+        const rightRepo = githubRepoLookup.get(right.githubRepo.toLowerCase());
+        const updatedComparison = compareDateDesc(
+          leftRepo?.updatedAt ?? left.githubRepoUpdatedAt ?? left.lastUsedAt,
+          rightRepo?.updatedAt ?? right.githubRepoUpdatedAt ?? right.lastUsedAt,
+        );
+
+        if (updatedComparison !== 0) {
+          return updatedComparison;
+        }
+
+        const lastUsedComparison = compareDateDesc(left.lastUsedAt, right.lastUsedAt);
+        if (lastUsedComparison !== 0) {
+          return lastUsedComparison;
+        }
+
+        return left.githubRepo.localeCompare(right.githubRepo);
+      });
+  }, [githubRepoLookup, props.projects, sort]);
 
   async function handleSave(projectId: string) {
     await props.onSave(projectId);
@@ -65,39 +110,56 @@ export function ProjectRoutingSection(props: ProjectRoutingProps) {
       className="rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)]"
       style={{ boxShadow: "var(--panel-shadow)" }}
     >
-      <button
-        type="button"
-        aria-expanded={isExpanded}
-        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
-        onClick={() => setIsExpanded((current) => !current)}
-      >
-        <div>
-          <h2 className="text-lg font-semibold">Project Routing</h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            {props.projects.length} repo{props.projects.length === 1 ? "" : "s"}
-          </p>
-        </div>
-        <svg
-          aria-hidden="true"
-          className={`h-5 w-5 text-[var(--muted)] transition-transform ${isExpanded ? "rotate-90" : ""}`}
-          fill="none"
-          viewBox="0 0 24 24"
+      <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
+          onClick={() => setIsExpanded((current) => !current)}
         >
-          <path
-            d="M9 6l6 6-6 6"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="1.8"
-          />
-        </svg>
-      </button>
+          <div>
+            <h2 className="text-lg font-semibold">Project Routing</h2>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              {props.projects.length} repo{props.projects.length === 1 ? "" : "s"}
+            </p>
+          </div>
+          <svg
+            aria-hidden="true"
+            className={`h-5 w-5 text-[var(--muted)] transition-transform ${isExpanded ? "rotate-90" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <path
+              d="M9 6l6 6-6 6"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.8"
+            />
+          </svg>
+        </button>
+
+        {props.projects.length > 1 && isExpanded ? (
+          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+            <span>Sort</span>
+            <select
+              className="rounded-lg border border-[color:var(--border)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text)]"
+              value={sort}
+              onChange={(event) => setSort(event.target.value as ProjectSort)}
+            >
+              <option value="recent">Most recent</option>
+              <option value="alpha-asc">A to Z</option>
+              <option value="alpha-desc">Z to A</option>
+            </select>
+          </label>
+        ) : null}
+      </div>
 
       {isExpanded ? (
         <div className="border-t border-[color:var(--border)] px-5 py-4">
           {props.projects.length ? (
             <div className="overflow-hidden rounded-xl border border-[color:var(--border)]">
-              {props.projects.map((project, index) => {
+              {sortedProjects.map((project, index) => {
                 const repo = githubRepoLookup.get(project.githubRepo.toLowerCase());
                 const isEditing = editingProjectId === project.id;
 
