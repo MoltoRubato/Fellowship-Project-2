@@ -3,6 +3,10 @@ import { fetchGithubCommitDetails } from "@/server/services/integrations/github"
 import { parseCommitEntry, buildCommitPromptItems, buildTaskItems, buildBlockerItems } from "./task-processing";
 import { runAiSummary } from "./ai";
 import { buildFallbackSummary } from "./fallback";
+import {
+  containsSummaryPlaceholderValue,
+  stripPlaceholderPhrases,
+} from "@/lib/summary-placeholders";
 
 const BULLET_LINE_PATTERN = /^\s*(?:[-•]\s+|\d+[.)]\s+)/;
 const EXISTING_LINK_PATTERN = /<https?:\/\/[^|>]+\|[^>]+>|https?:\/\/\S+/i;
@@ -41,6 +45,36 @@ function stripTrailingLinkSuffixes(line: string) {
     .replace(/\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
     .replace(TRAILING_LINK_SUFFIX_PATTERN, "")
     .trimEnd();
+}
+
+function sanitizeSummaryPlaceholders(summary: string) {
+  return summary
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/^(\s*(?:[-•]\s+|\d+[.)]\s+))(.*)$/);
+      if (!match) {
+        return line;
+      }
+
+      const [, prefix, content] = match;
+      if (!containsSummaryPlaceholderValue(content)) {
+        return line;
+      }
+
+      const sanitizedContent = stripPlaceholderPhrases(content);
+      return sanitizedContent ? `${prefix}${sanitizedContent}` : "";
+    })
+    .filter((line, index, lines) => {
+      if (line) {
+        return true;
+      }
+
+      const prev = lines[index - 1];
+      const next = lines[index + 1];
+      return Boolean(prev && next);
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 function parseCommitSha(externalId?: string | null) {
@@ -197,7 +231,7 @@ export async function generateStandupSummary(input: {
   if (aiResult?.summary) {
     return {
       ...aiResult,
-      summary: appendMissingSourceLinks(aiResult.summary, input.entries),
+      summary: appendMissingSourceLinks(sanitizeSummaryPlaceholders(aiResult.summary), input.entries),
     };
   }
 
@@ -218,6 +252,6 @@ export async function generateStandupSummary(input: {
 
   return {
     ...fallback,
-    summary: appendMissingSourceLinks(fallback.summary, input.entries),
+    summary: appendMissingSourceLinks(sanitizeSummaryPlaceholders(fallback.summary), input.entries),
   };
 }

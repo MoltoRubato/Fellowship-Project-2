@@ -44,17 +44,14 @@ export async function deliverSummaryOutcome(input: {
       result.summaryResult.questions,
     );
 
-    const followUpText = "I need a couple of clarifications before I can post the summary. I sent them in DM.";
     if (input.responseUrl) {
       await postToResponseUrl(input.responseUrl, {
-        response_type: "ephemeral",
-        text: followUpText,
-        replace_original: true,
+        delete_original: true,
+        text: "",
       });
       return;
     }
 
-    await sendModalConfirmation(input.client, input.channelId, input.slackUserId, followUpText);
     return;
   }
 

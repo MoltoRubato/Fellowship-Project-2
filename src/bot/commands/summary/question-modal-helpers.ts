@@ -1,5 +1,9 @@
 import type { Block, KnownBlock } from "@slack/types";
 import type { SummaryAnswer, SummaryQuestion } from "@/server/services/summary";
+import {
+  applyCustomValueToPlaceholderOption,
+  optionNeedsActualValue,
+} from "@/lib/summary-placeholders";
 
 export const OTHER_VALUE = "__other__";
 
@@ -44,21 +48,21 @@ export function buildSingleQuestionBlocks(question: SummaryQuestion): (KnownBloc
         elements: [
           {
             type: "mrkdwn" as const,
-            text: "Selected *Other*? Use the field below to type your answer.",
+            text: "Selected *Other* or an option with placeholders like *X%* or *Y ms*? Enter the real value or your full answer below.",
           },
         ],
       },
       {
         type: "input" as const,
         block_id: QUESTION_OTHER_BLOCK_ID,
-        label: { type: "plain_text" as const, text: "Your custom answer" },
+        label: { type: "plain_text" as const, text: "Actual value or custom answer" },
         optional: true,
         element: {
           type: "plain_text_input" as const,
           action_id: QUESTION_OTHER_ACTION_ID,
           placeholder: {
             type: "plain_text" as const,
-            text: "Only needed if you selected Other above",
+            text: "e.g. 20%, from 5s to 1s, or a full replacement answer",
           },
         },
       },
@@ -88,6 +92,10 @@ export function resolveSingleQuestionAnswer(
       | { selected_option?: { value?: string } }
       | undefined;
     const selectedValue = radioState?.selected_option?.value;
+    const otherState = values[QUESTION_OTHER_BLOCK_ID]?.[QUESTION_OTHER_ACTION_ID] as
+      | { value?: string }
+      | undefined;
+    const customValue = otherState?.value?.trim() ?? "";
 
     if (!selectedValue) {
       return {
@@ -98,12 +106,7 @@ export function resolveSingleQuestionAnswer(
     }
 
     if (selectedValue === OTHER_VALUE) {
-      const otherState = values[QUESTION_OTHER_BLOCK_ID]?.[QUESTION_OTHER_ACTION_ID] as
-        | { value?: string }
-        | undefined;
-      const otherText = otherState?.value?.trim();
-
-      if (!otherText) {
+      if (!customValue) {
         return {
           ok: false,
           blockId: QUESTION_OTHER_BLOCK_ID,
@@ -115,7 +118,25 @@ export function resolveSingleQuestionAnswer(
         ok: true,
         answer: {
           message: question.message,
-          answer: otherText,
+          answer: customValue,
+        },
+      };
+    }
+
+    if (optionNeedsActualValue(selectedValue)) {
+      if (!customValue) {
+        return {
+          ok: false,
+          blockId: QUESTION_OTHER_BLOCK_ID,
+          error: "Enter the real value below so the summary does not use a placeholder.",
+        };
+      }
+
+      return {
+        ok: true,
+        answer: {
+          message: question.message,
+          answer: applyCustomValueToPlaceholderOption(selectedValue, customValue),
         },
       };
     }

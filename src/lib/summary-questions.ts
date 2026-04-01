@@ -1,7 +1,5 @@
 import type { SummaryAnswer, SummaryQuestion } from "@/server/services/summary";
 
-const PLACEHOLDER_OPTION_PATTERN = /\b(?:x|n)\b(?=[%\s/~:-]|$)|please specify/i;
-
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -29,7 +27,6 @@ export function sanitizeSummaryQuestionOptions(value: unknown) {
   return value
     .map((option) => String(option ?? "").trim())
     .filter(Boolean)
-    .filter((option) => !PLACEHOLDER_OPTION_PATTERN.test(option))
     .filter((option) => {
       const normalized = normalizeComparableText(option);
       if (!normalized || seen.has(normalized)) {
