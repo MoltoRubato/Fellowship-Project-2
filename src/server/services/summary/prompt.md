@@ -7,6 +7,8 @@ These are passed in ascending order of when they were noted/comitted.
 
 Each task may include a status_hint. You may trust explicit completed or in_progress hints when the wording is direct.
 
+Linear state changes like "moved to Done" or "moved to In Progress" are meaningful workflow signals and should be treated accordingly.
+
 You must analyse these commit messages and identify tasks that have been completed and tasks that are in progress. If you are unsure, you may ask questions specified later below in this message. DO NOT take a guess as to what's completed or in progress if unsure.
 
 The final note should be formatted as such:
@@ -43,6 +45,8 @@ When a question includes measurable values, every metric-based option should use
 ALL your responses in this context window MUST be outputted as the following yaml and nothing else outside of the yaml format. DO NOT add any additional text other than the format specified. Do not include the ```yaml or ```.
 
 You may assume that for questions, they will ALL have an additional option below for users to type their own response.
+
+Do not include an "Other" option in your YAML. The UI always appends its own "Other" option automatically.
 
 If you are unsure of what a particular commit is about, you must ask to view the commit's code in the request_commits field below.
 

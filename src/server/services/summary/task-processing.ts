@@ -15,19 +15,76 @@ const IN_PROGRESS_KEYWORDS = [
 ];
 const LOW_SIGNAL_TASK_PATTERN = /^(hi|hello|hey|yo|sup|test|testing)$/i;
 const COMPLETED_HINT_PATTERN =
-  /\b(done|finished|completed|fixed|added|implemented|shipped|merged|resolved|polished|reviewed)\b/i;
+  /\b(done|finished|completed|fixed|added|implemented|shipped|merged|resolved|polished|reviewed|closed)\b/i;
+const LINEAR_COMPLETED_STATE_PATTERN = /\bmoved to (done|completed|closed|canceled|cancelled)\b/i;
+const LINEAR_IN_PROGRESS_STATE_PATTERN = /\bmoved to (in progress|doing|in review|review|backlog|todo|planned)\b/i;
+
+function extractLinearIdentifier(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/\b[A-Z]{2,}-\d+\b/);
+  return match?.[0] ?? null;
+}
+
+function stripLeadingLinearIdentifier(value: string, identifier?: string | null) {
+  if (!identifier) {
+    return value.trim();
+  }
+
+  return value.replace(new RegExp(`^${identifier}\\s+`, "i"), "").trim();
+}
+
+function buildLinearTaskText(entry: SummaryLogEntry) {
+  const title = entry.title?.trim() ?? "";
+  const content = entry.content.trim();
+  const identifier = extractLinearIdentifier(title) ?? extractLinearIdentifier(content);
+  const cleanTitle = stripLeadingLinearIdentifier(title, identifier);
+  const cleanContent = stripLeadingLinearIdentifier(content, identifier);
+
+  if (cleanTitle && cleanContent) {
+    if (cleanTitle.toLowerCase() === cleanContent.toLowerCase()) {
+      return `Linear: ${identifier ? `${identifier} ` : ""}${cleanTitle}`.trim();
+    }
+
+    return `Linear: ${identifier ? `${identifier} ` : ""}${cleanTitle} - ${cleanContent}`.trim();
+  }
+
+  if (cleanTitle) {
+    return `Linear: ${identifier ? `${identifier} ` : ""}${cleanTitle}`.trim();
+  }
+
+  if (cleanContent) {
+    return `Linear: ${identifier ? `${identifier} ` : ""}${cleanContent}`.trim();
+  }
+
+  return "Linear update";
+}
 
 export function looksInProgress(text: string) {
   const lower = text.toLowerCase();
   return IN_PROGRESS_KEYWORDS.some((keyword) => lower.includes(keyword));
 }
 
-function getTaskStatusHint(text: string): TaskPromptItem["status_hint"] {
-  if (COMPLETED_HINT_PATTERN.test(text)) {
+function getTaskStatusHint(entry: SummaryLogEntry, taskText: string): TaskPromptItem["status_hint"] {
+  const statusText = [entry.content, entry.title ?? "", taskText].join(" ").trim();
+
+  if (entry.source === EntrySource.linear_issue) {
+    if (LINEAR_COMPLETED_STATE_PATTERN.test(statusText)) {
+      return "completed";
+    }
+
+    if (LINEAR_IN_PROGRESS_STATE_PATTERN.test(statusText)) {
+      return "in_progress";
+    }
+  }
+
+  if (COMPLETED_HINT_PATTERN.test(statusText)) {
     return "completed";
   }
 
-  if (looksInProgress(text)) {
+  if (looksInProgress(statusText)) {
     return "in_progress";
   }
 
@@ -122,7 +179,7 @@ export function buildTaskItems(entries: SummaryLogEntry[]) {
       entry.source === EntrySource.github_pr
         ? `GitHub PR: ${entry.title ?? entry.content}`
         : entry.source === EntrySource.linear_issue
-          ? `Linear: ${entry.title ?? entry.content}`
+          ? buildLinearTaskText(entry)
           : entry.content;
 
     if (LOW_SIGNAL_TASK_PATTERN.test(task.trim())) {
@@ -137,7 +194,7 @@ export function buildTaskItems(entries: SummaryLogEntry[]) {
     seen.add(key);
     tasks.push({
       task,
-      status_hint: getTaskStatusHint(task),
+      status_hint: getTaskStatusHint(entry, task),
       source:
         entry.source === EntrySource.dm
           ? "dm"

@@ -40,6 +40,11 @@ function normalizeComparableText(value: string) {
   );
 }
 
+function isUiProvidedOtherOption(option: string) {
+  const normalized = normalizeComparableText(option);
+  return normalized === "other" || normalized === "custom" || normalized === "something else";
+}
+
 function tokenizeComparableText(value: string) {
   return normalizeComparableText(value)
     .split(" ")
@@ -91,6 +96,7 @@ export function sanitizeSummaryQuestionOptions(value: unknown) {
     .map((option) => String(option ?? "").trim())
     .filter(Boolean)
     .map((option) => normalizeOptionToPlaceholders(option))
+    .filter((option) => !isUiProvidedOtherOption(option))
     .filter((option) => {
       const normalized = normalizeComparableText(option);
       if (!normalized || seen.has(normalized)) {

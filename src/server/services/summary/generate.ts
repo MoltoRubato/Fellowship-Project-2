@@ -3,6 +3,7 @@ import { fetchGithubCommitDetails } from "@/server/services/integrations/github"
 import { parseCommitEntry, buildCommitPromptItems, buildTaskItems, buildBlockerItems } from "./task-processing";
 import { runAiSummary } from "./ai";
 import { buildFallbackSummary } from "./fallback";
+import { ensureLinearActivityCoverage } from "./coverage";
 import {
   containsSummaryPlaceholderValue,
   stripPlaceholderPhrases,
@@ -231,7 +232,14 @@ export async function generateStandupSummary(input: {
   if (aiResult?.summary) {
     return {
       ...aiResult,
-      summary: appendMissingSourceLinks(sanitizeSummaryPlaceholders(aiResult.summary), input.entries),
+      summary: appendMissingSourceLinks(
+        ensureLinearActivityCoverage(
+          sanitizeSummaryPlaceholders(aiResult.summary),
+          input.entries,
+          input.period,
+        ),
+        input.entries,
+      ),
     };
   }
 
@@ -252,6 +260,13 @@ export async function generateStandupSummary(input: {
 
   return {
     ...fallback,
-    summary: appendMissingSourceLinks(sanitizeSummaryPlaceholders(fallback.summary), input.entries),
+    summary: appendMissingSourceLinks(
+      ensureLinearActivityCoverage(
+        sanitizeSummaryPlaceholders(fallback.summary),
+        input.entries,
+        input.period,
+      ),
+      input.entries,
+    ),
   };
 }
