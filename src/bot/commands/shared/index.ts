@@ -46,7 +46,7 @@ export {
 
 export {
   resolveRepoFromModal,
-  resolveDisplayIdFromModal,
+  resolveEntryIdFromModal,
   resolveEditTextFromModal,
 } from "./modals";
 

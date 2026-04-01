@@ -15,7 +15,7 @@ export async function syncConnectedActivity(user: UserContext, since: Date, repo
   if (githubAccount) {
     const activity = await fetchGithubActivity(githubAccount, since, normalizedRepo);
     for (const item of activity) {
-      const entry = await createLogEntryForUser(user.id, {
+      const entry = await createLogEntryForUser({ id: user.id, slackUserId: user.slackUserId }, {
         repo: item.repo,
         content: item.content,
         title: item.title,
@@ -43,7 +43,7 @@ export async function syncConnectedActivity(user: UserContext, since: Date, repo
 
     const activity = await fetchLinearActivity(linearAccount, since, projectMappings, normalizedRepo);
     for (const item of activity) {
-      const entry = await createLogEntryForUser(user.id, {
+      const entry = await createLogEntryForUser({ id: user.id, slackUserId: user.slackUserId }, {
         repo: item.repo,
         content: item.content,
         title: item.title,

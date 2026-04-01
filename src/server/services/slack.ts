@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { db } from "@/server/db";
+import { getLocalTimeSnapshot } from "@/lib/local-time";
 
 const SLACK_PROFILE_CACHE_TTL_MS = 1000 * 60 * 30;
 const slackProfileCache = new Map<string, { expiresAt: number; profile: SlackUserProfile | null }>();
@@ -141,6 +142,21 @@ export async function getSlackUserProfile(slackUserId: string) {
   cacheSlackUserProfile(slackUserId, result);
 
   return result;
+}
+
+export async function getSlackDateKey(slackUserId: string, date = new Date()) {
+  const profile = await getSlackUserProfile(slackUserId);
+  const timeZone = profile?.timeZone;
+
+  if (!timeZone) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  try {
+    return getLocalTimeSnapshot(date, timeZone).dateKey;
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
 }
 
 export async function sendAuthChangeDm(slackUserId: string, provider: "github" | "linear", connected: boolean) {

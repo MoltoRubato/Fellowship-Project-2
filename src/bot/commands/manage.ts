@@ -16,14 +16,14 @@ import {
   toEntryModalItem,
   parseEditArgs,
   parseDeleteArgs,
-  resolveDisplayIdFromModal,
+  resolveEntryIdFromModal,
   resolveEditTextFromModal,
   resolveDefaultRepo,
   sendModalConfirmation,
 } from "./shared/index.js";
 import {
-  editManualEntry,
-  deleteManualEntry,
+  editManualEntryById,
+  deleteManualEntryById,
   listRecentManualEntries,
 } from "@/server/services/standup";
 
@@ -40,7 +40,7 @@ function buildEntryManagementModalView(input: {
 }) {
   const entryOptions = input.entries.map((entry) => buildEntryOption(entry));
   const initialOption =
-    entryOptions.find((option) => option.value === String(input.selectedEntry.displayId)) ?? entryOptions[0];
+    entryOptions.find((option) => option.value === input.selectedEntry.entryId) ?? entryOptions[0];
 
   const blocks: (KnownBlock | Block)[] = [
     {
@@ -75,14 +75,14 @@ function buildEntryManagementModalView(input: {
   if (input.callbackId === EDIT_MODAL_CALLBACK_ID) {
     blocks.push({
       type: "input",
-      block_id: `${EDIT_TEXT_BLOCK_ID}:${input.selectedEntry.displayId}`,
+      block_id: `${EDIT_TEXT_BLOCK_ID}:${input.selectedEntry.entryId}`,
       label: {
         type: "plain_text",
         text: "Updated text",
       },
       element: {
         type: "plain_text_input",
-        action_id: `${EDIT_TEXT_ACTION_ID}:${input.selectedEntry.displayId}`,
+        action_id: `${EDIT_TEXT_ACTION_ID}:${input.selectedEntry.entryId}`,
         multiline: true,
         initial_value: input.editText ?? input.selectedEntry.content,
         placeholder: {
@@ -100,7 +100,7 @@ function buildEntryManagementModalView(input: {
       channelId: input.channelId,
       teamId: input.teamId,
       responseUrl: input.responseUrl,
-      selectedDisplayId: input.selectedEntry.displayId,
+      selectedEntryId: input.selectedEntry.entryId,
       entries: input.entries,
     }),
     title: {
@@ -206,21 +206,21 @@ async function handleEditModalSubmission(args: ViewArgs) {
     channelId?: string;
     responseUrl?: string;
   };
-  const displayId = resolveDisplayIdFromModal(view);
+  const entryId = resolveEntryIdFromModal(view);
   const channelId = metadata.channelId ?? body.user.id;
 
-  if (!displayId) {
+  if (!entryId) {
     await sendModalConfirmation(client, channelId, body.user.id, "Please choose an entry to edit.", metadata.responseUrl);
     return;
   }
 
-  const entry = await editManualEntry(body.user.id, displayId, content);
+  const entry = await editManualEntryById(body.user.id, entryId, content);
   if (!entry) {
     await sendModalConfirmation(
       client,
       channelId,
       body.user.id,
-      `I couldn't find editable entry #${displayId}.`,
+      "I couldn't find that editable entry anymore.",
       metadata.responseUrl,
     );
     return;
@@ -243,21 +243,21 @@ async function handleDeleteModalSubmission(args: ViewArgs) {
     channelId?: string;
     responseUrl?: string;
   };
-  const displayId = resolveDisplayIdFromModal(view);
+  const entryId = resolveEntryIdFromModal(view);
   const channelId = metadata.channelId ?? body.user.id;
 
-  if (!displayId) {
+  if (!entryId) {
     await sendModalConfirmation(client, channelId, body.user.id, "Please choose an entry to delete.", metadata.responseUrl);
     return;
   }
 
-  const entry = await deleteManualEntry(body.user.id, displayId);
+  const entry = await deleteManualEntryById(body.user.id, entryId);
   if (!entry) {
     await sendModalConfirmation(
       client,
       channelId,
       body.user.id,
-      `I couldn't find deletable entry #${displayId}.`,
+      "I couldn't find that deletable entry anymore.",
       metadata.responseUrl,
     );
     return;
@@ -284,7 +284,7 @@ async function handleEntrySelectionChange(args: ActionArgs) {
     channelId?: string;
     teamId?: string;
     responseUrl?: string;
-    selectedDisplayId?: number;
+    selectedEntryId?: string;
     entryCache?: unknown;
   };
   const cachedEntries = sanitizeEntryModalCache(metadata.entryCache);
@@ -297,9 +297,9 @@ async function handleEntrySelectionChange(args: ActionArgs) {
   }
 
   const action = body.actions[0];
-  const selectedDisplayId =
-    action && "selected_option" in action ? Number(action.selected_option?.value ?? "") : Number.NaN;
-  const nextEntry = entries.find((entry) => entry.displayId === selectedDisplayId) ?? entries[0];
+  const selectedEntryId =
+    action && "selected_option" in action ? action.selected_option?.value ?? "" : "";
+  const nextEntry = entries.find((entry) => entry.entryId === selectedEntryId) ?? entries[0];
 
   await client.views.update({
     view_id: body.view.id,

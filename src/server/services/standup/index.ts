@@ -18,8 +18,8 @@ export {
   getProjectDisplayForUser,
   listEntriesSince,
   listActiveBlockers,
-  editManualEntry,
-  deleteManualEntry,
+  editManualEntryById,
+  deleteManualEntryById,
   listRecentManualEntries,
   getLastSelfActionedRepo,
 } from "./entries";

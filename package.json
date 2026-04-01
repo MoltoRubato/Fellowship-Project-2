@@ -13,6 +13,7 @@
     "start:all": "concurrently --names web,bot \"next start\" \"tsx src/bot/index.ts\"",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
+    "db:backfill-numbering": "tsx scripts/backfill-user-numbering.ts",
     "db:studio": "prisma studio",
     "db:migrate": "prisma migrate dev",
     "postinstall": "prisma generate"

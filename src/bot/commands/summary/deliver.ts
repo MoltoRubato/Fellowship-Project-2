@@ -29,6 +29,7 @@ export async function deliverSummaryOutcome(input: {
       channelId: input.channelId,
       period: input.period,
       updateNo: result.updateNo,
+      updateDateKey: result.updateDateKey ?? new Date().toISOString().slice(0, 10),
       summaryPreview: result.summaryResult.summary,
       questions: result.summaryResult.questions,
     });
@@ -78,6 +79,7 @@ export async function deliverSummaryOutcome(input: {
     channelId: input.channelId,
     period: input.period,
     updateNo: result.updateNo,
+    updateDateKey: result.updateDateKey ?? new Date().toISOString().slice(0, 10),
     summaryPreview: result.summaryResult.summary,
   });
 

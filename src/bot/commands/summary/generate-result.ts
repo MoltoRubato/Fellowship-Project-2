@@ -5,7 +5,7 @@ import {
   getSummaryWindow,
 } from "@/server/services/summary";
 import {
-  getNextSummaryUpdateNo,
+  reserveNextSummaryUpdateNo,
 } from "@/server/services/summarySessions";
 import {
   ensureSlackUser,
@@ -59,7 +59,14 @@ export async function generateSummaryResult(input: {
       : entries.length === 1
         ? entries[0]?.projectId ?? null
         : null;
-  const updateNo = input.updateNo ?? (await getNextSummaryUpdateNo(user.id, projectId));
+  const reservedUpdate =
+    input.updateNo === undefined
+      ? await reserveNextSummaryUpdateNo({
+          userId: user.id,
+          slackUserId: input.slackUserId,
+        })
+      : null;
+  const updateNo = input.updateNo ?? reservedUpdate?.updateNo ?? 1;
   const summaryResult = await generateStandupSummary({
     userId: user.id,
     period: input.period,
@@ -74,6 +81,7 @@ export async function generateSummaryResult(input: {
     userId: user.id,
     projectId,
     updateNo,
+    updateDateKey: reservedUpdate?.updateDateKey ?? null,
     summaryResult,
   };
 }

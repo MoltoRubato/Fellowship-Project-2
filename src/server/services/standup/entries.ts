@@ -1,43 +1,51 @@
 import { EntrySource } from "@prisma/client";
 import { db } from "@/server/db";
+import { reserveNextDailyLogDisplayIdTx } from "@/server/services/daily-sequences";
+import { getSlackDateKey } from "@/server/services/slack";
 import { normalizeRepo } from "./repo";
 import type { LoggedEntryInput } from "./types";
 import { resolveProjectForUser, touchProject } from "./projects";
 import { ensureSlackUser, getUserContextBySlackId } from "./users";
 
 export async function createLogEntryForUser(
-  userId: string,
+  user: { id: string; slackUserId: string },
   input: Omit<LoggedEntryInput, "slackUserId" | "slackTeamId">,
 ) {
-  const project = await resolveProjectForUser(userId, input.repo);
+  const project = await resolveProjectForUser(user.id, input.repo);
+  const displayDateKey = await getSlackDateKey(user.slackUserId, input.createdAt ?? new Date());
+  const entry = await db.$transaction(async (tx) => {
+    if (input.externalId) {
+      const existing = await tx.logEntry.findFirst({
+        where: {
+          userId: user.id,
+          source: input.source ?? EntrySource.manual,
+          externalId: input.externalId,
+        },
+      });
 
-  if (input.externalId) {
-    const existing = await db.logEntry.findFirst({
-      where: {
-        userId,
+      if (existing) {
+        return existing;
+      }
+    }
+
+    const displayId = await reserveNextDailyLogDisplayIdTx(tx, user.id, displayDateKey);
+
+    return tx.logEntry.create({
+      data: {
+        userId: user.id,
+        displayId,
+        displayDateKey,
+        projectId: project?.id ?? null,
+        content: input.content,
+        entryType: input.entryType,
         source: input.source ?? EntrySource.manual,
-        externalId: input.externalId,
+        title: input.title ?? null,
+        externalId: input.externalId ?? null,
+        externalUrl: input.externalUrl ?? null,
+        metadata: input.metadata,
+        createdAt: input.createdAt,
       },
     });
-
-    if (existing) {
-      return existing;
-    }
-  }
-
-  const entry = await db.logEntry.create({
-    data: {
-      userId,
-      projectId: project?.id ?? null,
-      content: input.content,
-      entryType: input.entryType,
-      source: input.source ?? EntrySource.manual,
-      title: input.title ?? null,
-      externalId: input.externalId ?? null,
-      externalUrl: input.externalUrl ?? null,
-      metadata: input.metadata,
-      createdAt: input.createdAt,
-    },
   });
 
   if (project?.id) {
@@ -50,7 +58,7 @@ export async function createLogEntryForUser(
 export async function logEntry(input: LoggedEntryInput) {
   const { user } = await ensureSlackUser(input.slackUserId, input.slackTeamId);
 
-  return createLogEntryForUser(user.id, input);
+  return createLogEntryForUser({ id: user.id, slackUserId: user.slackUserId }, input);
 }
 
 export async function getProjectDisplayForUser(userId: string, repo?: string | null) {
@@ -117,34 +125,20 @@ export async function listActiveBlockers(slackUserId: string, repo?: string | nu
   });
 }
 
-export async function editManualEntry(
-  slackUserId: string,
-  displayId: number,
-  content: string,
-  repo?: string | null,
-) {
+export async function editManualEntryById(slackUserId: string, entryId: string, content: string) {
   const user = await getUserContextBySlackId(slackUserId);
   if (!user) {
     return null;
   }
 
-  const normalizedRepo = normalizeRepo(repo);
-
   const entry = await db.logEntry.findFirst({
     where: {
       userId: user.id,
-      displayId,
+      id: entryId,
       deletedAt: null,
       source: {
         in: [EntrySource.manual, EntrySource.dm],
       },
-      ...(normalizedRepo
-        ? {
-            project: {
-              githubRepo: normalizedRepo,
-            },
-          }
-        : {}),
     },
     include: {
       project: true,
@@ -166,29 +160,20 @@ export async function editManualEntry(
   });
 }
 
-export async function deleteManualEntry(slackUserId: string, displayId: number, repo?: string | null) {
+export async function deleteManualEntryById(slackUserId: string, entryId: string) {
   const user = await getUserContextBySlackId(slackUserId);
   if (!user) {
     return null;
   }
 
-  const normalizedRepo = normalizeRepo(repo);
-
   const entry = await db.logEntry.findFirst({
     where: {
       userId: user.id,
-      displayId,
+      id: entryId,
       deletedAt: null,
       source: {
         in: [EntrySource.manual, EntrySource.dm],
       },
-      ...(normalizedRepo
-        ? {
-            project: {
-              githubRepo: normalizedRepo,
-            },
-          }
-        : {}),
     },
     include: {
       project: true,

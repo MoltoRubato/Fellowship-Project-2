@@ -27,15 +27,14 @@ export function resolveRepoFromModal(view: ViewArgs["view"]) {
   return normalizeRepo(selectedRepo ?? typedRepo ?? null);
 }
 
-export function resolveDisplayIdFromModal(view: ViewArgs["view"]) {
+export function resolveEntryIdFromModal(view: ViewArgs["view"]) {
   const selectedValue =
     view.state.values[ENTRY_SELECT_BLOCK_ID]?.[ENTRY_SELECT_ACTION_ID] &&
     "selected_option" in view.state.values[ENTRY_SELECT_BLOCK_ID][ENTRY_SELECT_ACTION_ID]
       ? view.state.values[ENTRY_SELECT_BLOCK_ID][ENTRY_SELECT_ACTION_ID].selected_option?.value
       : undefined;
-  const displayId = Number(selectedValue ?? "");
 
-  return Number.isInteger(displayId) && displayId > 0 ? displayId : null;
+  return selectedValue?.trim() || null;
 }
 
 export function resolveEditTextFromModal(view: ViewArgs["view"]) {

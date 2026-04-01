@@ -15,7 +15,9 @@ export type ModalEntryType = "update" | "blocker";
 export type SummaryPeriod = "today" | "week";
 
 export type EntryModalItem = {
+  entryId: string;
   displayId: number;
+  displayDateKey: string;
   content: string;
   repoLabel: string;
 };

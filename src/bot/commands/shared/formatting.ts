@@ -35,25 +35,29 @@ export function buildProjectOption(project: ProjectLike) {
 }
 
 export function toEntryModalItem(entry: {
+  id: string;
   displayId: number;
+  displayDateKey: string;
   content: string;
   project?: ProjectLike | null;
 }): EntryModalItem {
   return {
+    entryId: entry.id,
     displayId: entry.displayId,
+    displayDateKey: entry.displayDateKey,
     content: entry.content,
     repoLabel: entry.project ? formatProjectLabel(entry.project) : "No repo",
   };
 }
 
 export function buildEntryOption(entry: EntryModalItem) {
-  const text = truncatePlainText(`#${entry.displayId} | ${entry.repoLabel} | ${entry.content}`);
+  const text = truncatePlainText(`#${entry.displayId} | ${entry.displayDateKey} | ${entry.repoLabel} | ${entry.content}`);
   return {
     text: {
       type: "plain_text" as const,
       text,
     },
-    value: String(entry.displayId),
+    value: entry.entryId,
   };
 }
 
@@ -63,7 +67,7 @@ export function buildEntryPreviewText(entry: EntryModalItem) {
     .map((line) => `>${line}`)
     .join("\n");
 
-  return `*Selected entry*\n*#${entry.displayId}* • ${entry.repoLabel}\n${quotedContent}`;
+  return `*Selected entry*\n*#${entry.displayId}* • ${entry.displayDateKey} • ${entry.repoLabel}\n${quotedContent}`;
 }
 
 export function sanitizeEntryModalCache(value: unknown): EntryModalItem[] {
@@ -78,20 +82,26 @@ export function sanitizeEntryModalCache(value: unknown): EntryModalItem[] {
       }
 
       const candidate = item as {
+        entryId?: unknown;
         displayId?: unknown;
+        displayDateKey?: unknown;
         content?: unknown;
         repoLabel?: unknown;
       };
+      const entryId = typeof candidate.entryId === "string" ? candidate.entryId : "";
       const displayId = Number(candidate.displayId);
+      const displayDateKey = typeof candidate.displayDateKey === "string" ? candidate.displayDateKey : "";
       const content = typeof candidate.content === "string" ? candidate.content : "";
       const repoLabel = typeof candidate.repoLabel === "string" ? candidate.repoLabel : "No repo";
 
-      if (!Number.isInteger(displayId) || displayId <= 0 || !content.trim()) {
+      if (!entryId || !Number.isInteger(displayId) || displayId <= 0 || !displayDateKey || !content.trim()) {
         return null;
       }
 
       return {
+        entryId,
         displayId,
+        displayDateKey,
         content,
         repoLabel,
       };
@@ -103,14 +113,14 @@ export function buildEntryManagementMetadata(input: {
   channelId: string;
   teamId: string;
   responseUrl?: string;
-  selectedDisplayId: number;
+  selectedEntryId: string;
   entries: EntryModalItem[];
 }) {
   const baseMetadata = {
     channelId: input.channelId,
     teamId: input.teamId,
     responseUrl: input.responseUrl,
-    selectedDisplayId: input.selectedDisplayId,
+    selectedEntryId: input.selectedEntryId,
   };
 
   const withCache = {

@@ -1,5 +1,7 @@
 import { Prisma, SummarySessionStatus } from "@prisma/client";
 import { db } from "@/server/db";
+import { reserveNextDailySummaryUpdateNoTx } from "@/server/services/daily-sequences";
+import { getSlackDateKey } from "@/server/services/slack";
 
 export interface SummarySessionQuestion {
   message: string;
@@ -29,21 +31,17 @@ export async function expirePendingSummarySessionsForUser(userId: string) {
   });
 }
 
-export async function getNextSummaryUpdateNo(userId: string, projectId?: string | null) {
-  const latest = await db.summarySession.findFirst({
-    where: {
-      userId,
-      projectId: projectId ?? null,
-    },
-    orderBy: {
-      updateNo: "desc",
-    },
-    select: {
-      updateNo: true,
-    },
-  });
+export async function reserveNextSummaryUpdateNo(input: {
+  userId: string;
+  slackUserId: string;
+  date?: Date;
+}) {
+  const updateDateKey = await getSlackDateKey(input.slackUserId, input.date ?? new Date());
 
-  return (latest?.updateNo ?? 0) + 1;
+  return db.$transaction(async (tx) => {
+    const updateNo = await reserveNextDailySummaryUpdateNoTx(tx, input.userId, updateDateKey);
+    return { updateNo, updateDateKey };
+  });
 }
 
 export async function createPendingSummarySession(input: {
@@ -52,6 +50,7 @@ export async function createPendingSummarySession(input: {
   channelId: string;
   period: string;
   updateNo: number;
+  updateDateKey: string;
   summaryPreview?: string | null;
   questions: SummarySessionQuestion[];
   answers?: SummarySessionAnswer[];
@@ -65,6 +64,7 @@ export async function createPendingSummarySession(input: {
       channelId: input.channelId,
       period: input.period,
       updateNo: input.updateNo,
+      updateDateKey: input.updateDateKey,
       summaryPreview: input.summaryPreview ?? null,
       questions: input.questions as unknown as Prisma.InputJsonValue,
       answers: (input.answers ?? []) as unknown as Prisma.InputJsonValue,
@@ -79,6 +79,7 @@ export async function createCompletedSummarySession(input: {
   channelId: string;
   period: string;
   updateNo: number;
+  updateDateKey: string;
   summaryPreview: string;
 }) {
   await expirePendingSummarySessionsForUser(input.userId);
@@ -90,6 +91,7 @@ export async function createCompletedSummarySession(input: {
       channelId: input.channelId,
       period: input.period,
       updateNo: input.updateNo,
+      updateDateKey: input.updateDateKey,
       summaryPreview: input.summaryPreview,
       questions: [] as Prisma.InputJsonValue,
       answers: [] as Prisma.InputJsonValue,
