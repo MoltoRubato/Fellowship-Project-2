@@ -48,21 +48,21 @@ export function buildSingleQuestionBlocks(question: SummaryQuestion): (KnownBloc
         elements: [
           {
             type: "mrkdwn" as const,
-            text: "Selected *Other* or an option with placeholders like *X%* or *Y ms*? Enter the real value or your full answer below.",
+            text: "For *X/Y* options, enter the real value below.",
           },
         ],
       },
       {
         type: "input" as const,
         block_id: QUESTION_OTHER_BLOCK_ID,
-        label: { type: "plain_text" as const, text: "Actual value or custom answer" },
+        label: { type: "plain_text" as const, text: "Details" },
         optional: true,
         element: {
           type: "plain_text_input" as const,
           action_id: QUESTION_OTHER_ACTION_ID,
           placeholder: {
             type: "plain_text" as const,
-            text: "e.g. 20%, from 5s to 1s, or a full replacement answer",
+            text: "e.g. 20% or from 5s to 1s",
           },
         },
       },
@@ -110,7 +110,7 @@ export function resolveSingleQuestionAnswer(
         return {
           ok: false,
           blockId: QUESTION_OTHER_BLOCK_ID,
-          error: "Add your custom answer below or choose one of the listed options.",
+          error: "Add your answer below.",
         };
       }
 
@@ -128,7 +128,7 @@ export function resolveSingleQuestionAnswer(
         return {
           ok: false,
           blockId: QUESTION_OTHER_BLOCK_ID,
-          error: "Enter the real value below so the summary does not use a placeholder.",
+          error: "Add the real value below.",
         };
       }
 
@@ -159,7 +159,7 @@ export function resolveSingleQuestionAnswer(
     return {
       ok: false,
       blockId: QUESTION_TEXT_BLOCK_ID,
-      error: "Add an answer before submitting.",
+      error: "Add your answer.",
     };
   }
 
