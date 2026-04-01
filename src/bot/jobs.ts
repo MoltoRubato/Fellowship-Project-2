@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { getSummaryWindow } from "@/server/services/summary";
+import { getSummarySyncSince } from "@/server/services/summary";
 import { listActiveSlackUsers, syncConnectedActivity } from "@/server/services/standup";
 
 export function startActivitySyncJob() {
@@ -7,7 +7,7 @@ export function startActivitySyncJob() {
     "0 8,10,12,14,16,18 * * 1-5",
     async () => {
       const users = await listActiveSlackUsers();
-      const since = getSummaryWindow("today");
+      const since = getSummarySyncSince("today");
 
       for (const user of users) {
         try {

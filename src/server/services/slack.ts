@@ -145,17 +145,31 @@ export async function getSlackUserProfile(slackUserId: string) {
 }
 
 export async function getSlackDateKey(slackUserId: string, date = new Date()) {
+  return (await getSlackLocalTimeSnapshot(slackUserId, date)).dateKey;
+}
+
+export async function getSlackLocalTimeSnapshot(slackUserId: string, date = new Date()) {
   const profile = await getSlackUserProfile(slackUserId);
   const timeZone = profile?.timeZone;
 
   if (!timeZone) {
-    return date.toISOString().slice(0, 10);
+    return {
+      dateKey: date.toISOString().slice(0, 10),
+      weekday: date.getUTCDay(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(),
+    };
   }
 
   try {
-    return getLocalTimeSnapshot(date, timeZone).dateKey;
+    return getLocalTimeSnapshot(date, timeZone);
   } catch {
-    return date.toISOString().slice(0, 10);
+    return {
+      dateKey: date.toISOString().slice(0, 10),
+      weekday: date.getUTCDay(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(),
+    };
   }
 }
 

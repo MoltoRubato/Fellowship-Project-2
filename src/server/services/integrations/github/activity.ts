@@ -32,6 +32,93 @@ async function loadGithubReposFromAccount(account: Account) {
   };
 }
 
+async function loadRecentCommitActivity(account: Account, since: Date, repoFilter?: string | null) {
+  const token = decrypt(account.accessToken);
+  const octokit = createGithubClient(token);
+  const username = account.username?.toLowerCase();
+  if (!username) {
+    return [] as GithubActivityItem[];
+  }
+
+  const repos = await octokit.paginate(octokit.rest.repos.listForAuthenticatedUser, {
+    per_page: 100,
+    sort: "updated",
+    affiliation: "owner,collaborator,organization_member",
+  });
+
+  const recentRepos = repos.filter((repo) => {
+    const repoName = repo.full_name;
+    if (!repoName) {
+      return false;
+    }
+
+    if (repoFilter && repoName.toLowerCase() !== repoFilter.toLowerCase()) {
+      return false;
+    }
+
+    if (!repo.updated_at) {
+      return true;
+    }
+
+    return new Date(repo.updated_at) >= since;
+  });
+
+  const results: GithubActivityItem[] = [];
+
+  for (const repo of recentRepos.slice(0, 25)) {
+    const owner = repo.owner?.login;
+    const repoName = repo.name;
+    const fullName = repo.full_name;
+    if (!owner || !repoName || !fullName) {
+      continue;
+    }
+
+    let commits: Awaited<ReturnType<typeof octokit.rest.repos.listCommits>>["data"] = [];
+
+    try {
+      const response = await octokit.rest.repos.listCommits({
+        owner,
+        repo: repoName,
+        since: since.toISOString(),
+        author: account.username ?? undefined,
+        per_page: 20,
+      });
+      commits = response.data;
+    } catch {
+      continue;
+    }
+
+    for (const commit of commits) {
+      const sha = commit.sha?.trim();
+      const message = commit.commit.message.split("\n")[0]?.trim();
+      const createdAtRaw = commit.commit.author?.date ?? commit.commit.committer?.date ?? null;
+      const authorLogin = commit.author?.login?.toLowerCase() ?? null;
+      const committerLogin = commit.committer?.login?.toLowerCase() ?? null;
+      const createdAt = createdAtRaw ? new Date(createdAtRaw) : null;
+
+      if (!sha || !message || !createdAt || createdAt < since || message.startsWith("Merge")) {
+        continue;
+      }
+
+      if (authorLogin !== username && committerLogin !== username) {
+        continue;
+      }
+
+      results.push({
+        repo: fullName,
+        title: message,
+        content: `Commit to ${fullName}: ${message}`,
+        source: "github_commit",
+        externalId: `github-commit:${fullName}:${sha}`,
+        externalUrl: commit.html_url ?? `https://github.com/${fullName}/commit/${sha}`,
+        createdAt,
+      });
+    }
+  }
+
+  return results;
+}
+
 export async function getGithubConnectionSnapshot(userId: string): Promise<GithubConnectionSnapshot> {
   const account = await getGithubAccount(userId);
   if (!account) {
@@ -154,5 +241,12 @@ export async function fetchGithubActivity(
     }
   }
 
-  return results.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const recentCommitActivity = await loadRecentCommitActivity(account, since, repoFilter);
+  const deduped = new Map<string, GithubActivityItem>();
+
+  for (const item of [...results, ...recentCommitActivity]) {
+    deduped.set(item.externalId, item);
+  }
+
+  return [...deduped.values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 }

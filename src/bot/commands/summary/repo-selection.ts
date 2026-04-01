@@ -3,10 +3,7 @@ import {
   sortRepoNamesForRepoPicker,
 } from "../shared/index.js";
 import {
-  getSummaryWindow,
-} from "@/server/services/summary";
-import {
-  listEntriesSince,
+  listEntriesForSummaryPeriod,
   type UserContext,
 } from "@/server/services/standup";
 
@@ -15,8 +12,7 @@ export async function determineSummaryRepoSelection(
   period: SummaryPeriod,
   user?: UserContext | null,
 ) {
-  const since = getSummaryWindow(period);
-  const entries = await listEntriesSince(slackUserId, since);
+  const entries = await listEntriesForSummaryPeriod(slackUserId, period);
   const repos = [...new Set(entries.map((entry) => entry.project?.githubRepo ?? null))];
   const scopedRepos = repos.filter((repo): repo is string => Boolean(repo));
   const hasUnscopedEntries = repos.includes(null);

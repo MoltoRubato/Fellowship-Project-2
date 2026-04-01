@@ -17,6 +17,7 @@ export {
   logEntry,
   getProjectDisplayForUser,
   listEntriesSince,
+  listEntriesForSummaryPeriod,
   listActiveBlockers,
   editManualEntryById,
   deleteManualEntryById,

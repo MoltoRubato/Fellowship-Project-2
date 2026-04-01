@@ -2,6 +2,8 @@ import { EntrySource } from "@prisma/client";
 import { db } from "@/server/db";
 import { reserveNextDailyLogDisplayIdTx } from "@/server/services/daily-sequences";
 import { getSlackDateKey } from "@/server/services/slack";
+import type { SummaryPeriod } from "@/server/services/summary";
+import { getSummaryPeriodDateScope } from "@/server/services/summary/period-scope";
 import { normalizeRepo } from "./repo";
 import type { LoggedEntryInput } from "./types";
 import { resolveProjectForUser, touchProject } from "./projects";
@@ -84,6 +86,39 @@ export async function listEntriesSince(
       userId: user.id,
       deletedAt: null,
       createdAt: { gte: since },
+      ...(normalizedRepo
+        ? {
+            project: {
+              githubRepo: normalizedRepo,
+            },
+          }
+        : {}),
+    },
+    include: {
+      project: true,
+    },
+    orderBy: [{ createdAt: "asc" }, { displayId: "asc" }],
+  });
+}
+
+export async function listEntriesForSummaryPeriod(
+  slackUserId: string,
+  period: SummaryPeriod,
+  repo?: string | null,
+) {
+  const user = await getUserContextBySlackId(slackUserId);
+  if (!user) {
+    return [];
+  }
+
+  const { startDateKey } = await getSummaryPeriodDateScope(slackUserId, period);
+  const normalizedRepo = normalizeRepo(repo);
+
+  return db.logEntry.findMany({
+    where: {
+      userId: user.id,
+      deletedAt: null,
+      displayDateKey: period === "today" ? startDateKey : { gte: startDateKey },
       ...(normalizedRepo
         ? {
             project: {

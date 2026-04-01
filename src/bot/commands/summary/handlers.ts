@@ -14,7 +14,7 @@ import {
   sendModalConfirmation,
 } from "../shared/index.js";
 import {
-  getSummaryWindow,
+  getSummarySyncSince,
 } from "@/server/services/summary";
 import {
   getUserContextBySlackId,
@@ -39,7 +39,7 @@ export async function handleSummarise(args: CommandArgs) {
     });
 
     if (user) {
-      const since = getSummaryWindow(period);
+      const since = getSummarySyncSince(period);
       try {
         await syncConnectedActivity(user, since);
       } catch (error) {

@@ -2,7 +2,7 @@ import type { SummaryPeriod } from "../types.js";
 import type { SummaryAnswer } from "@/server/services/summary";
 import {
   generateStandupSummary,
-  getSummaryWindow,
+  getSummarySyncSince,
 } from "@/server/services/summary";
 import {
   reserveNextSummaryUpdateNo,
@@ -11,7 +11,7 @@ import {
   ensureSlackUser,
   getUserContextBySlackId,
   listActiveBlockers,
-  listEntriesSince,
+  listEntriesForSummaryPeriod,
   syncConnectedActivity,
 } from "@/server/services/standup";
 
@@ -25,7 +25,7 @@ export async function generateSummaryResult(input: {
   skipSync?: boolean;
 }) {
   await ensureSlackUser(input.slackUserId, input.slackTeamId);
-  const since = getSummaryWindow(input.period);
+  const since = getSummarySyncSince(input.period);
   const user = await getUserContextBySlackId(input.slackUserId);
 
   if (!user) {
@@ -43,7 +43,7 @@ export async function generateSummaryResult(input: {
     }
   }
 
-  const entries = await listEntriesSince(input.slackUserId, since, input.repo);
+  const entries = await listEntriesForSummaryPeriod(input.slackUserId, input.period, input.repo);
   const blockers = await listActiveBlockers(input.slackUserId, input.repo);
 
   if (!entries.length && !blockers.length) {

@@ -6,4 +6,5 @@ export type {
   SummaryLogEntry,
 } from "./types";
 
-export { getSummaryWindow, generateStandupSummary } from "./generate";
+export { generateStandupSummary } from "./generate";
+export { getSummaryPeriodDateScope, getSummarySyncSince } from "./period-scope";
