@@ -35,6 +35,7 @@ export interface CommitPromptItem {
   authors: string[];
   commit_id: string;
   commit_url: string;
+  source_ref: string;
 }
 
 export interface TaskPromptItem {
@@ -42,4 +43,5 @@ export interface TaskPromptItem {
   status_hint: "completed" | "in_progress" | "unknown";
   source: "manual" | "dm" | "github_pr" | "linear_issue";
   link?: string | null;
+  source_ref?: string | null;
 }

@@ -8,8 +8,44 @@ const LINEAR_IDENTIFIER_PATTERN = /\b[A-Z]{2,}-\d+\b/;
 type CoverageItem = {
   identifier: string | null;
   text: string;
+  aliases: string[];
   status: "completed" | "in_progress" | "unknown";
 };
+
+const STOP_WORDS = new Set(["a", "an", "and", "for", "from", "in", "of", "on", "or", "the", "to", "with"]);
+
+function tokenize(value: string) {
+  return normalizeComparableText(value)
+    .split(" ")
+    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+}
+
+function summaryMentionsAlias(summary: string, alias: string) {
+  const normalizedSummary = normalizeComparableText(summary);
+  const normalizedAlias = normalizeComparableText(alias);
+  if (!normalizedSummary || !normalizedAlias) {
+    return false;
+  }
+
+  if (normalizedSummary.includes(normalizedAlias) || normalizedAlias.includes(normalizedSummary)) {
+    return true;
+  }
+
+  const summaryTokens = new Set(tokenize(summary));
+  const aliasTokens = tokenize(alias);
+  if (!aliasTokens.length) {
+    return false;
+  }
+
+  let overlap = 0;
+  for (const token of aliasTokens) {
+    if (summaryTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / aliasTokens.length >= 0.75;
+}
 
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -73,9 +109,18 @@ function buildLinearCoverageItem(entry: SummaryLogEntry): CoverageItem | null {
       ? "in_progress"
       : "unknown";
 
+  const aliases = [
+    cleanTitle,
+    identifier && cleanTitle ? `${identifier} ${cleanTitle}` : null,
+    identifier && cleanTitle ? `${cleanTitle} (${identifier})` : null,
+    cleanContent,
+    text,
+  ].filter((alias): alias is string => Boolean(alias));
+
   return {
     identifier,
     text: truncateLine(text),
+    aliases,
     status,
   };
 }
@@ -103,11 +148,11 @@ function summaryAlreadyMentionsItem(summary: string, item: CoverageItem) {
     return false;
   }
 
-  if (item.identifier) {
-    return normalizedSummary.includes(item.identifier.toLowerCase());
+  if (item.identifier && normalizedSummary.includes(item.identifier.toLowerCase())) {
+    return true;
   }
 
-  return normalizedSummary.includes(normalizeComparableText(item.text));
+  return item.aliases.some((alias) => summaryMentionsAlias(summary, alias));
 }
 
 function insertCompletedBullets(lines: string[], bullets: string[], period: SummaryPeriod) {

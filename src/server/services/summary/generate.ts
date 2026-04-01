@@ -4,49 +4,11 @@ import { parseCommitEntry, buildCommitPromptItems, buildTaskItems, buildBlockerI
 import { runAiSummary } from "./ai";
 import { buildFallbackSummary } from "./fallback";
 import { ensureLinearActivityCoverage } from "./coverage";
+import { appendMissingSourceLinks } from "./links";
 import {
   containsSummaryPlaceholderValue,
   stripPlaceholderPhrases,
 } from "@/lib/summary-placeholders";
-
-const BULLET_LINE_PATTERN = /^\s*(?:[-•]\s+|\d+[.)]\s+)/;
-const EXISTING_LINK_PATTERN = /<https?:\/\/[^|>]+\|[^>]+>|https?:\/\/\S+/i;
-const TRAILING_LINK_SUFFIX_PATTERN = /(?:\s-\s(?:<https?:\/\/[^|>]+\|[^>]+>|https?:\/\/\S+|Link))+$/i;
-
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/<https?:\/\/[^|>]+\|[^>]+>/g, " ")
-    .replace(/https?:\/\/\S+/g, " ")
-    .replace(/[`*_~]/g, "")
-    .replace(/[^a-z0-9\s#/-]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function extractUrlFromLine(line: string) {
-  const match = line.match(EXISTING_LINK_PATTERN);
-  const token = match?.[0];
-
-  if (!token) {
-    return null;
-  }
-
-  if (token.startsWith("<")) {
-    const url = token.slice(1).split("|")[0]?.trim();
-    return url || null;
-  }
-
-  return token.trim();
-}
-
-function stripTrailingLinkSuffixes(line: string) {
-  return line
-    .replace(/\s-\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
-    .replace(/\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
-    .replace(TRAILING_LINK_SUFFIX_PATTERN, "")
-    .trimEnd();
-}
 
 function sanitizeSummaryPlaceholders(summary: string) {
   return summary
@@ -76,115 +38,6 @@ function sanitizeSummaryPlaceholders(summary: string) {
     })
     .join("\n")
     .replace(/\n{3,}/g, "\n\n");
-}
-
-function parseCommitSha(externalId?: string | null) {
-  if (!externalId?.startsWith("github-commit:")) {
-    return null;
-  }
-
-  const raw = externalId.slice("github-commit:".length);
-  const separator = raw.lastIndexOf(":");
-  if (separator === -1) {
-    return null;
-  }
-
-  const sha = raw.slice(separator + 1).trim();
-  return sha || null;
-}
-
-function parsePullNumber(url?: string | null) {
-  if (!url) {
-    return null;
-  }
-  const match = url.match(/\/pull\/(\d+)(?:$|[/?#])/i);
-  return match?.[1] ?? null;
-}
-
-function extractLinearTicket(title?: string | null) {
-  if (!title) {
-    return null;
-  }
-  const match = title.match(/\b[A-Z]{2,}-\d+\b/);
-  return match?.[0] ?? null;
-}
-
-type LinkCandidate = {
-  url: string;
-  tokens: string[];
-};
-
-function buildLinkCandidates(entries: SummaryLogEntry[]): LinkCandidate[] {
-  return entries
-    .filter(
-      (entry) =>
-        Boolean(entry.externalUrl) &&
-        (entry.source === "github_commit" || entry.source === "github_pr" || entry.source === "linear_issue"),
-    )
-    .map((entry) => {
-      const sha = parseCommitSha(entry.externalId);
-      const shortSha = sha ? sha.slice(0, 7) : null;
-      const pullNumber = parsePullNumber(entry.externalUrl);
-      const linearTicket = extractLinearTicket(entry.title);
-      const repo = entry.project?.githubRepo ?? null;
-
-      const rawTokens = [
-        entry.title ?? "",
-        entry.content ?? "",
-        repo ?? "",
-        sha ?? "",
-        shortSha ?? "",
-        pullNumber ? `#${pullNumber}` : "",
-        pullNumber ?? "",
-        linearTicket ?? "",
-      ];
-
-      const tokens = rawTokens
-        .map(normalizeText)
-        .filter((token, index, array) => token.length >= 4 && array.indexOf(token) === index);
-
-      return {
-        url: entry.externalUrl as string,
-        tokens,
-      };
-    });
-}
-
-function appendMissingSourceLinks(summary: string, entries: SummaryLogEntry[]) {
-  const candidates = buildLinkCandidates(entries);
-  if (!candidates.length) {
-    return summary;
-  }
-
-  const lines = summary.split("\n");
-  const updated = lines.map((line) => {
-    const existingUrl = extractUrlFromLine(line);
-    const cleanedLine = stripTrailingLinkSuffixes(line);
-    const trimmed = cleanedLine.trim();
-    if (!BULLET_LINE_PATTERN.test(trimmed)) {
-      return cleanedLine;
-    }
-    if (existingUrl) {
-      return `${cleanedLine} - <${existingUrl}|Link>`;
-    }
-
-    const normalizedLine = normalizeText(trimmed);
-    if (!normalizedLine) {
-      return line;
-    }
-
-    const match = candidates.find((candidate) =>
-      candidate.tokens.some((token) => normalizedLine.includes(token) || token.includes(normalizedLine)),
-    );
-
-    if (!match) {
-      return cleanedLine;
-    }
-
-    return `${cleanedLine} - <${match.url}|Link>`;
-  });
-
-  return updated.join("\n");
 }
 
 export function getSummaryWindow(period: SummaryPeriod) {

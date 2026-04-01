@@ -36,6 +36,10 @@ If a task or commit comes from GitHub or Linear and includes link metadata in th
 - `Link`
 - Example: `- Reviewed OAuth callback handling. - Link`
 
+If a task or commit includes a `source_ref` value, you MUST preserve it at the end of that exact dot point as `[ref:source_ref]`, immediately before any ` - Link` suffix.
+
+Do not combine multiple GitHub or Linear items with different `source_ref` values into one bullet. Keep linked source items as separate bullets so each non-manual bullet maps cleanly to its own link.
+
 You must ask any clarifying questions until you are 100% certain on what tasks are still in progress and what tasks are done, and any other questions.
 
 You should also ask questions to ask and encourage the user any numeric descriptions (if the point makes sense to e.g. no need for design changes) such as the '1~2 seconds to 50ms' point. In the questions, write a suggested times and aspects of measurement by taking a guess by writing them as 'e.g. ...'

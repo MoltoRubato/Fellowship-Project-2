@@ -1,6 +1,7 @@
 import { EntrySource } from "@prisma/client";
 import type { SummaryLogEntry, TaskPromptItem, CommitPromptItem } from "./types";
 import type { GithubCommitDetail } from "@/server/services/integrations/github";
+import { getCommitSourceRef, getEntrySourceRef } from "./source-refs";
 
 const IN_PROGRESS_KEYWORDS = [
   "in progress",
@@ -163,6 +164,7 @@ export function buildCommitPromptItems(commitDetails: GithubCommitDetail[]): Com
       authors: commit.authors,
       commit_id: commit.sha,
       commit_url: `https://github.com/${commit.repo}/commit/${commit.sha}`,
+      source_ref: getCommitSourceRef(commit),
     }));
 }
 
@@ -207,6 +209,7 @@ export function buildTaskItems(entries: SummaryLogEntry[]) {
         entry.source === EntrySource.github_pr || entry.source === EntrySource.linear_issue
           ? (entry.externalUrl ?? null)
           : null,
+      source_ref: getEntrySourceRef(entry),
     });
   }
 
