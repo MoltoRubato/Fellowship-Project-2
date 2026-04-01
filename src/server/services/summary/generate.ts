@@ -5,7 +5,8 @@ import { runAiSummary } from "./ai";
 import { buildFallbackSummary } from "./fallback";
 
 const BULLET_LINE_PATTERN = /^\s*(?:[-•]\s+|\d+[.)]\s+)/;
-const EXISTING_LINK_PATTERN = /<https?:\/\/[^|>]+\|[^>]+>|\s-\sLink\b/i;
+const EXISTING_LINK_PATTERN = /<https?:\/\/[^|>]+\|[^>]+>|https?:\/\/\S+/i;
+const TRAILING_LINK_SUFFIX_PATTERN = /(?:\s-\s(?:<https?:\/\/[^|>]+\|[^>]+>|https?:\/\/\S+|Link))+$/i;
 
 function normalizeText(value: string) {
   return value
@@ -16,6 +17,30 @@ function normalizeText(value: string) {
     .replace(/[^a-z0-9\s#/-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function extractUrlFromLine(line: string) {
+  const match = line.match(EXISTING_LINK_PATTERN);
+  const token = match?.[0];
+
+  if (!token) {
+    return null;
+  }
+
+  if (token.startsWith("<")) {
+    const url = token.slice(1).split("|")[0]?.trim();
+    return url || null;
+  }
+
+  return token.trim();
+}
+
+function stripTrailingLinkSuffixes(line: string) {
+  return line
+    .replace(/\s-\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
+    .replace(/\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
+    .replace(TRAILING_LINK_SUFFIX_PATTERN, "")
+    .trimEnd();
 }
 
 function parseCommitSha(externalId?: string | null) {
@@ -50,6 +75,7 @@ function extractLinearTicket(title?: string | null) {
 }
 
 type LinkCandidate = {
+  url: string;
   tokens: string[];
 };
 
@@ -83,6 +109,7 @@ function buildLinkCandidates(entries: SummaryLogEntry[]): LinkCandidate[] {
         .filter((token, index, array) => token.length >= 4 && array.indexOf(token) === index);
 
       return {
+        url: entry.externalUrl as string,
         tokens,
       };
     });
@@ -96,17 +123,14 @@ function appendMissingSourceLinks(summary: string, entries: SummaryLogEntry[]) {
 
   const lines = summary.split("\n");
   const updated = lines.map((line) => {
-    const cleanedLine = line
-      .replace(/\s-\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
-      .replace(/\s<https?:\/\/[^>]*\.\.\.\s*$/i, "")
-      .replace(/\s-\s<https?:\/\/[^|>]+\|[^>]+>\s*$/i, " - Link")
-      .replace(/\s-\shttps?:\/\/\S+\s*$/i, " - Link");
+    const existingUrl = extractUrlFromLine(line);
+    const cleanedLine = stripTrailingLinkSuffixes(line);
     const trimmed = cleanedLine.trim();
     if (!BULLET_LINE_PATTERN.test(trimmed)) {
       return cleanedLine;
     }
-    if (EXISTING_LINK_PATTERN.test(cleanedLine)) {
-      return cleanedLine;
+    if (existingUrl) {
+      return `${cleanedLine} - <${existingUrl}|Link>`;
     }
 
     const normalizedLine = normalizeText(trimmed);
@@ -122,7 +146,7 @@ function appendMissingSourceLinks(summary: string, entries: SummaryLogEntry[]) {
       return cleanedLine;
     }
 
-    return `${cleanedLine} - Link`;
+    return `${cleanedLine} - <${match.url}|Link>`;
   });
 
   return updated.join("\n");
