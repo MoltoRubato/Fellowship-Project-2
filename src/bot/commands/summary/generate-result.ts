@@ -14,6 +14,9 @@ import {
   listEntriesForSummaryPeriod,
   syncConnectedActivity,
 } from "@/server/services/standup";
+import { withSoftTimeout } from "@/lib/async";
+
+const SUMMARY_SYNC_TIMEOUT_MS = 4_000;
 
 export async function generateSummaryResult(input: {
   slackUserId: string;
@@ -35,15 +38,28 @@ export async function generateSummaryResult(input: {
     };
   }
 
+  const scopedRepos = input.repos?.length ? input.repos : null;
+
   if (!input.skipSync) {
     try {
-      await syncConnectedActivity(user, since);
+      const syncPromise = syncConnectedActivity(user, since, scopedRepos).catch((error) => {
+        console.error("Activity sync failed", error);
+        return null;
+      });
+      const syncResult = await withSoftTimeout(syncPromise, SUMMARY_SYNC_TIMEOUT_MS);
+
+      if (syncResult.timedOut) {
+        console.warn("Activity sync timed out for summary generation", {
+          slackUserId: input.slackUserId,
+          period: input.period,
+          repos: scopedRepos,
+          timeoutMs: SUMMARY_SYNC_TIMEOUT_MS,
+        });
+      }
     } catch (error) {
       console.error("Activity sync failed", error);
     }
   }
-
-  const scopedRepos = input.repos?.length ? input.repos : null;
   const entries = await listEntriesForSummaryPeriod(input.slackUserId, input.period, scopedRepos);
   const blockers = await listActiveBlockers(input.slackUserId, scopedRepos);
 

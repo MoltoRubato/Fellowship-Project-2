@@ -2,6 +2,9 @@ import { type Account } from "@prisma/client";
 import { decrypt } from "@/lib/crypto";
 import type { LinearProjectOption, LinearConnectionSnapshot, LinearActivityItem } from "./types";
 import { fetchLinear, getLinearAccount } from "./client";
+import { normalizeRepos } from "@/server/services/standup/repo";
+
+type RepoFilterInput = string | string[] | null | undefined;
 
 async function loadLinearProjects(account: Account) {
   const accessToken = decrypt(account.accessToken);
@@ -91,11 +94,12 @@ export async function fetchLinearActivity(
     githubRepo: string;
     linearProjectId: string;
   }>,
-  repoFilter?: string | null,
+  repoFilter?: RepoFilterInput,
 ) {
   if (projectMappings.length === 0) {
     return [] as LinearActivityItem[];
   }
+  const repoFilters = normalizeRepos(Array.isArray(repoFilter) ? repoFilter : [repoFilter]);
 
   const accessToken = decrypt(account.accessToken);
   const data = await fetchLinear<{
@@ -162,7 +166,7 @@ export async function fetchLinearActivity(
     const createdAt = new Date(issue.updatedAt);
     const state = issue.state?.name ?? "Updated";
     for (const repo of repos) {
-      if (repoFilter && repo.toLowerCase() !== repoFilter.toLowerCase()) {
+      if (repoFilters.length && !repoFilters.includes(repo.toLowerCase())) {
         continue;
       }
 

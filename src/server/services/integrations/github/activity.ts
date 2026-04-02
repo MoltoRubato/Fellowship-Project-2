@@ -2,6 +2,17 @@ import { type Account } from "@prisma/client";
 import { decrypt } from "@/lib/crypto";
 import type { GithubActivityItem, GithubVisibleRepo, GithubConnectionSnapshot } from "./types";
 import { createGithubClient, parseScopeHeader, buildPermissionWarning, getGithubAccount } from "./client";
+import { normalizeRepos } from "@/server/services/standup/repo";
+
+type RepoFilterInput = string | string[] | null | undefined;
+
+function normalizeRepoFilterInput(repoFilter?: RepoFilterInput) {
+  return normalizeRepos(Array.isArray(repoFilter) ? repoFilter : [repoFilter]);
+}
+
+function matchesRepoFilter(repoName: string, repoFilters: string[]) {
+  return repoFilters.length === 0 || repoFilters.includes(repoName.toLowerCase());
+}
 
 export function buildPullRequestContent(repo: string, title: string, status: "merged" | "closed" | "updated") {
   if (status === "merged") {
@@ -113,41 +124,52 @@ async function loadGithubReposFromAccount(account: Account) {
   };
 }
 
-async function loadRecentCommitActivity(account: Account, since: Date, repoFilter?: string | null) {
+async function loadRecentCommitActivity(account: Account, since: Date, repoFilter?: RepoFilterInput) {
   const token = decrypt(account.accessToken);
   const octokit = createGithubClient(token);
   const username = account.username?.toLowerCase();
   if (!username) {
     return [] as GithubActivityItem[];
   }
+  const repoFilters = normalizeRepoFilterInput(repoFilter);
+  const recentRepos = repoFilters.length
+    ? repoFilters
+        .map((repo) => {
+          const [owner, repoName] = repo.split("/");
+          return owner && repoName
+            ? { ownerLogin: owner, name: repoName, full_name: repo }
+            : null;
+        })
+        .filter(
+          (
+            repo,
+          ): repo is {
+            ownerLogin: string;
+            name: string;
+            full_name: string;
+          } => Boolean(repo),
+        )
+    : (await octokit.paginate(octokit.rest.repos.listForAuthenticatedUser, {
+        per_page: 100,
+        sort: "updated",
+        affiliation: "owner,collaborator,organization_member",
+      })).filter((repo) => {
+        const repoName = repo.full_name;
+        if (!repoName) {
+          return false;
+        }
 
-  const repos = await octokit.paginate(octokit.rest.repos.listForAuthenticatedUser, {
-    per_page: 100,
-    sort: "updated",
-    affiliation: "owner,collaborator,organization_member",
-  });
+        if (!repo.updated_at) {
+          return true;
+        }
 
-  const recentRepos = repos.filter((repo) => {
-    const repoName = repo.full_name;
-    if (!repoName) {
-      return false;
-    }
-
-    if (repoFilter && repoName.toLowerCase() !== repoFilter.toLowerCase()) {
-      return false;
-    }
-
-    if (!repo.updated_at) {
-      return true;
-    }
-
-    return new Date(repo.updated_at) >= since;
-  });
+        return new Date(repo.updated_at) >= since;
+      });
 
   const results: GithubActivityItem[] = [];
 
   for (const repo of recentRepos.slice(0, 25)) {
-    const owner = repo.owner?.login;
+    const owner = "ownerLogin" in repo ? repo.ownerLogin : repo.owner?.login;
     const repoName = repo.name;
     const fullName = repo.full_name;
     if (!owner || !repoName || !fullName) {
@@ -200,91 +222,95 @@ async function loadRecentCommitActivity(account: Account, since: Date, repoFilte
   return results;
 }
 
-async function loadRecentPullRequestActivity(account: Account, since: Date, repoFilter?: string | null) {
+async function loadRecentPullRequestActivity(account: Account, since: Date, repoFilter?: RepoFilterInput) {
   const token = decrypt(account.accessToken);
   const octokit = createGithubClient(token);
   const username = account.username?.trim();
   if (!username) {
     return [] as GithubActivityItem[];
   }
-
-  const queryParts = [
-    "is:pr",
-    `author:${username}`,
-    `updated:>=${since.toISOString().slice(0, 10)}`,
-  ];
-  if (repoFilter) {
-    queryParts.push(`repo:${repoFilter}`);
-  }
-
-  const search = await octokit.rest.search.issuesAndPullRequests({
-    q: queryParts.join(" "),
-    sort: "updated",
-    order: "desc",
-    per_page: 50,
+  const repoFilters = normalizeRepoFilterInput(repoFilter);
+  const queries = (repoFilters.length ? repoFilters : [null]).map((repo) => {
+    const parts = [
+      "is:pr",
+      `author:${username}`,
+      `updated:>=${since.toISOString().slice(0, 10)}`,
+    ];
+    if (repo) {
+      parts.push(`repo:${repo}`);
+    }
+    return parts.join(" ");
   });
-
   const results: GithubActivityItem[] = [];
 
-  for (const item of search.data.items) {
-    const repo = parseRepoFromApiUrl(item.repository_url);
-    const title = item.title?.trim();
-    const pullNumber = item.number;
-    const htmlUrl = item.html_url?.trim();
+  for (const query of queries) {
+    const search = await octokit.rest.search.issuesAndPullRequests({
+      q: query,
+      sort: "updated",
+      order: "desc",
+      per_page: 50,
+    });
 
-    if (!repo || !title || !pullNumber || !htmlUrl) {
-      continue;
-    }
+    for (const item of search.data.items) {
+      const repo = parseRepoFromApiUrl(item.repository_url);
+      const title = item.title?.trim();
+      const pullNumber = item.number;
+      const htmlUrl = item.html_url?.trim();
 
-    if (repoFilter && repo !== repoFilter.toLowerCase()) {
-      continue;
-    }
+      if (!repo || !title || !pullNumber || !htmlUrl) {
+        continue;
+      }
 
-    let mergedAt: string | null = null;
-    let closedAt: string | null = item.closed_at ?? null;
-    let updatedAt: string | null = item.updated_at ?? null;
-    let state = item.state ?? null;
+      if (!matchesRepoFilter(repo, repoFilters)) {
+        continue;
+      }
 
-    try {
-      const [owner, repoName] = repo.split("/");
-      const pull = await octokit.rest.pulls.get({
-        owner,
-        repo: repoName,
-        pull_number: pullNumber,
+      let mergedAt: string | null = null;
+      let closedAt: string | null = item.closed_at ?? null;
+      let updatedAt: string | null = item.updated_at ?? null;
+      let state = item.state ?? null;
+
+      try {
+        const [owner, repoName] = repo.split("/");
+        const pull = await octokit.rest.pulls.get({
+          owner,
+          repo: repoName,
+          pull_number: pullNumber,
+        });
+        mergedAt = pull.data.merged_at ?? null;
+        closedAt = pull.data.closed_at ?? closedAt;
+        updatedAt = pull.data.updated_at ?? updatedAt;
+        state = pull.data.state ?? state;
+      } catch {
+        // Fall back to the search result when the detailed pull request fetch fails.
+      }
+
+      const statusInfo = getPullRequestStatus({
+        mergedAt,
+        closedAt,
+        updatedAt,
+        state,
       });
-      mergedAt = pull.data.merged_at ?? null;
-      closedAt = pull.data.closed_at ?? closedAt;
-      updatedAt = pull.data.updated_at ?? updatedAt;
-      state = pull.data.state ?? state;
-    } catch {
-      // Fall back to the search result when the detailed pull request fetch fails.
-    }
 
-    const statusInfo = getPullRequestStatus({
-      mergedAt,
-      closedAt,
-      updatedAt,
-      state,
-    });
+      if (!statusInfo.createdAt || statusInfo.createdAt < since) {
+        continue;
+      }
 
-    if (!statusInfo.createdAt || statusInfo.createdAt < since) {
-      continue;
-    }
-
-    results.push({
-      repo,
-      title,
-      content: buildPullRequestContent(repo, title, statusInfo.status),
-      source: "github_pr",
-      externalId: buildPullRequestExternalId(
+      results.push({
         repo,
-        pullNumber,
-        statusInfo.status,
-        statusInfo.createdAt.toISOString(),
-      ),
-      externalUrl: htmlUrl,
-      createdAt: statusInfo.createdAt,
-    });
+        title,
+        content: buildPullRequestContent(repo, title, statusInfo.status),
+        source: "github_pr",
+        externalId: buildPullRequestExternalId(
+          repo,
+          pullNumber,
+          statusInfo.status,
+          statusInfo.createdAt.toISOString(),
+        ),
+        externalUrl: htmlUrl,
+        createdAt: statusInfo.createdAt,
+      });
+    }
   }
 
   return results;
@@ -316,12 +342,13 @@ export async function getGithubConnectionSnapshot(userId: string): Promise<Githu
 export async function fetchGithubActivity(
   account: Account,
   since: Date,
-  repoFilter?: string | null,
+  repoFilter?: RepoFilterInput,
 ) {
   const username = account.username;
   if (!username) {
     return [] as GithubActivityItem[];
   }
+  const repoFilters = normalizeRepoFilterInput(repoFilter);
 
   const token = decrypt(account.accessToken);
   const octokit = createGithubClient(token);
@@ -350,7 +377,7 @@ export async function fetchGithubActivity(
       continue;
     }
 
-    if (repoFilter && repoName.toLowerCase() !== repoFilter.toLowerCase()) {
+    if (!matchesRepoFilter(repoName, repoFilters)) {
       continue;
     }
 
@@ -412,8 +439,8 @@ export async function fetchGithubActivity(
     }
   }
 
-  const recentCommitActivity = await loadRecentCommitActivity(account, since, repoFilter);
-  const recentPullRequestActivity = await loadRecentPullRequestActivity(account, since, repoFilter);
+  const recentCommitActivity = await loadRecentCommitActivity(account, since, repoFilters);
+  const recentPullRequestActivity = await loadRecentPullRequestActivity(account, since, repoFilters);
   const deduped = new Map<string, GithubActivityItem>();
 
   for (const item of [...results, ...recentCommitActivity, ...recentPullRequestActivity]) {

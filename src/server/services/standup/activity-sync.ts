@@ -2,18 +2,23 @@ import { EntrySource, EntryType } from "@prisma/client";
 import { db } from "@/server/db";
 import { fetchGithubActivity } from "@/server/services/integrations/github";
 import { fetchLinearActivity } from "@/server/services/integrations/linear";
-import { normalizeRepo } from "./repo";
+import { normalizeRepos } from "./repo";
 import { createLogEntryForUser } from "./entries";
 import type { UserContext } from "./types";
 
-export async function syncConnectedActivity(user: UserContext, since: Date, repo?: string | null) {
+export async function syncConnectedActivity(
+  user: UserContext,
+  since: Date,
+  repos?: string | string[] | null,
+) {
   let githubCount = 0;
   let linearCount = 0;
-  const normalizedRepo = normalizeRepo(repo);
+  const normalizedRepos = normalizeRepos(Array.isArray(repos) ? repos : [repos]);
+  const repoFilter = normalizedRepos.length ? normalizedRepos : null;
 
   const githubAccount = user.accounts.find((account) => account.provider === "github");
   if (githubAccount) {
-    const activity = await fetchGithubActivity(githubAccount, since, normalizedRepo);
+    const activity = await fetchGithubActivity(githubAccount, since, repoFilter);
     for (const item of activity) {
       const entry = await createLogEntryForUser({ id: user.id, slackUserId: user.slackUserId }, {
         repo: item.repo,
@@ -35,13 +40,13 @@ export async function syncConnectedActivity(user: UserContext, since: Date, repo
   const linearAccount = user.accounts.find((account) => account.provider === "linear");
   if (linearAccount) {
     const projectMappings = user.projects
-      .filter((project) => project.linearProjectId)
+      .filter((project) => project.linearProjectId && (!repoFilter || repoFilter.includes(project.githubRepo)))
       .map((project) => ({
         githubRepo: project.githubRepo,
         linearProjectId: project.linearProjectId!,
       }));
 
-    const activity = await fetchLinearActivity(linearAccount, since, projectMappings, normalizedRepo);
+    const activity = await fetchLinearActivity(linearAccount, since, projectMappings, repoFilter);
     for (const item of activity) {
       const entry = await createLogEntryForUser({ id: user.id, slackUserId: user.slackUserId }, {
         repo: item.repo,
