@@ -85,6 +85,9 @@
 html {
   min-height: 100%;
   background: var(--bg);
+  transition:
+    background-color 220ms ease,
+    color 220ms ease;
 }
 
 body {
@@ -92,8 +95,58 @@ body {
   color: var(--text);
   background: linear-gradient(180deg, var(--bg) 0%, var(--bg-soft) 100%);
   font-family: "Avenir Next", "Segoe UI Variable", "Segoe UI", sans-serif;
+  transition:
+    color 220ms ease,
+    background-color 220ms ease,
+    background-image 220ms ease;
 }
 
 a {
   color: inherit;
+}
+
+.auth-card-transition {
+  transition:
+    color 220ms ease,
+    background-color 220ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    opacity 220ms ease,
+    transform 220ms ease;
+}
+
+.auth-title-stable {
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  transition: none !important;
+}
+
+.auth-accordion {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    grid-template-rows 260ms ease,
+    opacity 220ms ease;
+}
+
+.auth-accordion[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.auth-accordion-inner {
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body,
+  .auth-card-transition,
+  .auth-accordion {
+    transition: none !important;
+  }
 }

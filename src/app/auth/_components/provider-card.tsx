@@ -27,7 +27,7 @@ export function ProviderCard(props: {
 
   return (
     <article
-      className="rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)] p-5"
+      className="auth-card-transition rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)] p-5 hover:-translate-y-px"
       style={{ boxShadow: "var(--panel-shadow)" }}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -46,7 +46,9 @@ export function ProviderCard(props: {
             />
             <span>{statusLabel}</span>
           </div>
-          <h2 className="mt-2 text-lg font-semibold">{props.title}</h2>
+          <h2 className="auth-title-stable mt-2 text-lg font-semibold text-[var(--text)]">
+            {props.title}
+          </h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
             {detailLabel}
           </p>
@@ -68,7 +70,7 @@ export function ProviderCard(props: {
             <button
               type="button"
               aria-label={`Dismiss ${props.title} warning`}
-              className="shrink-0 text-current opacity-80 transition-opacity hover:opacity-100"
+              className="shrink-0 text-current opacity-80 hover:opacity-100"
               onClick={props.onDismissWarning}
             >
               <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">

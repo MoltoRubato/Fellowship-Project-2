@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 const buttonBase =
-  "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 
 const secondaryButtonClass =
   `${buttonBase} border border-[color:var(--border)] bg-transparent text-[var(--text)] hover:bg-[var(--card-hover)]`;
@@ -107,56 +107,64 @@ export function ProjectRoutingSection(props: ProjectRoutingProps) {
 
   return (
     <section
-      className="rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)]"
+      className="auth-card-transition rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)] hover:-translate-y-px hover:bg-[var(--card-hover)]"
       style={{ boxShadow: "var(--panel-shadow)" }}
     >
-      <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <button
-          type="button"
-          aria-expanded={isExpanded}
-          className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
-          onClick={() => setIsExpanded((current) => !current)}
-        >
+      <div className="flex items-center justify-between gap-4 px-5 py-3.5">
+        <div className="min-w-0 flex-1">
           <div>
-            <h2 className="text-lg font-semibold">Project Routing</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">
+            <h2 className="auth-title-stable text-lg font-semibold text-[var(--text)]">
+              Project Routing
+            </h2>
+            <p className="mt-0.5 text-sm text-[var(--muted)]">
               {props.projects.length} repo{props.projects.length === 1 ? "" : "s"}
             </p>
           </div>
-          <svg
-            aria-hidden="true"
-            className={`h-5 w-5 text-[var(--muted)] transition-transform ${isExpanded ? "rotate-90" : ""}`}
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <path
-              d="M9 6l6 6-6 6"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.8"
-            />
-          </svg>
-        </button>
+        </div>
 
-        {props.projects.length > 1 && isExpanded ? (
-          <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
-            <span>Sort</span>
-            <select
-              className="rounded-lg border border-[color:var(--border)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text)]"
-              value={sort}
-              onChange={(event) => setSort(event.target.value as ProjectSort)}
+        <div className="flex items-center justify-end gap-3">
+          {props.projects.length > 1 && isExpanded ? (
+            <label className="flex items-center gap-2 text-sm text-[var(--muted)]">
+              <span className="whitespace-nowrap">Sort</span>
+              <select
+                className="rounded-lg border border-[color:var(--border)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text)]"
+                value={sort}
+                onChange={(event) => setSort(event.target.value as ProjectSort)}
+              >
+                <option value="recent">Most recent</option>
+                <option value="alpha-asc">A to Z</option>
+                <option value="alpha-desc">Z to A</option>
+              </select>
+            </label>
+          ) : null}
+
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            aria-label={isExpanded ? "Collapse project routing" : "Expand project routing"}
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[color:var(--border)] bg-[var(--card-bg)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-[var(--text)]"
+            onClick={() => setIsExpanded((current) => !current)}
+          >
+            <svg
+              aria-hidden="true"
+              className={`h-5 w-5 text-[var(--muted)] transition-transform ${isExpanded ? "rotate-90" : ""}`}
+              fill="none"
+              viewBox="0 0 24 24"
             >
-              <option value="recent">Most recent</option>
-              <option value="alpha-asc">A to Z</option>
-              <option value="alpha-desc">Z to A</option>
-            </select>
-          </label>
-        ) : null}
+              <path
+                d="M9 6l6 6-6 6"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="1.8"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {isExpanded ? (
-        <div className="border-t border-[color:var(--border)] px-5 py-4">
+      <div className="auth-accordion border-t border-[color:var(--border)]" data-open={isExpanded}>
+        <div className="auth-accordion-inner px-5 py-4">
           {props.projects.length ? (
             <div className="overflow-hidden rounded-xl border border-[color:var(--border)]">
               {sortedProjects.map((project, index) => {
@@ -203,8 +211,8 @@ export function ProjectRoutingSection(props: ProjectRoutingProps) {
                       </button>
                     </div>
 
-                    {isEditing ? (
-                      <div className="border-t border-[color:var(--border)] bg-[var(--input-bg)] px-4 py-4">
+                    <div className="auth-accordion border-t border-[color:var(--border)] bg-[var(--input-bg)]" data-open={isEditing}>
+                      <div className="auth-accordion-inner px-4 py-4">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                           <select
                             className="min-w-0 flex-1 rounded-lg border border-[color:var(--border)] bg-[var(--panel)] px-3 py-2 text-sm text-[var(--text)]"
@@ -245,7 +253,7 @@ export function ProjectRoutingSection(props: ProjectRoutingProps) {
                           </p>
                         ) : null}
                       </div>
-                    ) : null}
+                    </div>
                   </div>
                 );
               })}
@@ -254,7 +262,7 @@ export function ProjectRoutingSection(props: ProjectRoutingProps) {
             <p className="text-sm text-[var(--muted)]">Connect GitHub to see your repos here.</p>
           )}
         </div>
-      ) : null}
+      </div>
     </section>
   );
 }

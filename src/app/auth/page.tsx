@@ -10,7 +10,7 @@ import { ThemeToggle } from "./_components/theme-toggle";
 import { useDismissedWarnings } from "./use-dismissed-warnings";
 
 const buttonBase =
-  "inline-flex min-w-[144px] items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex min-w-[144px] items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--accent)] disabled:cursor-not-allowed disabled:opacity-60";
 
 const primaryButtonClass =
   `${buttonBase} bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]`;
@@ -225,7 +225,7 @@ export default function AuthPage() {
     <main className="min-h-screen px-4 py-8 sm:px-6">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
         <section
-          className="rounded-xl border border-[color:var(--border)] bg-[var(--panel)] p-5"
+          className="auth-card-transition rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)] p-5 hover:-translate-y-px hover:bg-[var(--card-hover)]"
           style={{ boxShadow: "var(--panel-shadow)" }}
         >
           <div className="flex items-start justify-between gap-4">
@@ -242,8 +242,10 @@ export default function AuthPage() {
               </div>
 
               <div className="min-w-0">
-                <p className="text-sm font-medium text-[var(--muted)]">Standup Bot</p>
-                <h1 className="mt-1 text-xl font-semibold">Connections</h1>
+                <p className="auth-title-stable text-sm font-medium text-[var(--muted)]">Standup Bot</p>
+                <h1 className="auth-title-stable mt-1 text-xl font-semibold text-[var(--text)]">
+                  Connections
+                </h1>
                 <p className="mt-1 text-sm text-[var(--muted)]">
                 Connect GitHub and Linear, then map repos to the right projects.
                 </p>
@@ -274,7 +276,7 @@ export default function AuthPage() {
               <button
                 type="button"
                 aria-label="Dismiss notification"
-                className="text-current opacity-80 transition-opacity hover:opacity-100"
+                className="text-current opacity-80 hover:opacity-100"
                 onClick={() => setNotice(null)}
               >
                 <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
@@ -363,10 +365,12 @@ export default function AuthPage() {
           />
         ) : (
           <section
-            className="rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)] p-5"
+            className="auth-card-transition rounded-xl border border-[color:var(--border)] bg-[var(--card-bg)] p-5"
             style={{ boxShadow: "var(--panel-shadow)" }}
           >
-            <h2 className="text-lg font-semibold">Project Routing</h2>
+            <h2 className="auth-title-stable text-lg font-semibold text-[var(--text)]">
+              Project Routing
+            </h2>
             <p className="mt-2 text-sm text-[var(--muted)]">Loading repo mappings...</p>
           </section>
         )}
