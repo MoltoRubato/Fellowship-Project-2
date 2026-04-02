@@ -6,9 +6,7 @@ import {
 } from "../shared/index.js";
 import {
   createCompletedSummarySession,
-  createPendingSummarySession,
 } from "@/server/services/summarySessions";
-import { sendQuestionsDM } from "./question-modal";
 import type { generateSummaryResult } from "./generate-result";
 
 export async function deliverSummaryOutcome(input: {
@@ -21,39 +19,6 @@ export async function deliverSummaryOutcome(input: {
   result: Awaited<ReturnType<typeof generateSummaryResult>> & { ok: true };
 }) {
   const { result } = input;
-
-  if (result.summaryResult.questions.length) {
-    const session = await createPendingSummarySession({
-      userId: result.userId,
-      projectId: result.projectId,
-      channelId: input.channelId,
-      period: input.period,
-      updateNo: result.updateNo,
-      updateDateKey: result.updateDateKey ?? new Date().toISOString().slice(0, 10),
-      summaryPreview: result.summaryResult.summary,
-      questions: result.summaryResult.questions,
-    });
-
-    await sendQuestionsDM(
-      input.client,
-      input.slackUserId,
-      session.id,
-      result.updateNo,
-      input.repo ?? null,
-      result.summaryResult.summary,
-      result.summaryResult.questions,
-    );
-
-    if (input.responseUrl) {
-      await postToResponseUrl(input.responseUrl, {
-        delete_original: true,
-        text: "",
-      });
-      return;
-    }
-
-    return;
-  }
 
   if (!result.summaryResult.summary) {
     const fallbackText = "I couldn't generate a summary yet. Please try again.";

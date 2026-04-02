@@ -131,22 +131,7 @@
    - Click it, select the demo repo from the modal, click **"Summarise"**
    - (If only one repo has entries, it skips straight to generation)
 3. The bot starts generating. Point out: *"Generating your standup summary..."*
-
-**If the AI asks clarifying questions** (this is a key feature to demo):
-
-4. The bot sends a DM with a preview:
-   - *"Update #1 for owner/repo"*
-   - A one-line summary preview in a blockquote
-   - *"I need 2 clarifications before I can post the summary."*
-5. Each question appears as a separate message, e.g.:
-   - *"Q1. Is the OAuth token refresh flow completed or still in progress?"*
-   - Options shown: *"Options: Completed | In progress | Other"*
-   - Each has an **"Answer"** button
-6. Click **"Answer"** — modal opens titled **"Q1 of 2"**
-   - Radio buttons for the options
-   - Select "Completed", click **"Submit"**
-7. Answer Q2 the same way
-8. After all questions answered, the final summary is posted
+4. The final summary is posted directly in Slack without any clarification step
 
 **Point out the summary structure:**
 
@@ -161,7 +146,7 @@
 - **Date/time footer**
 
 **Say:**
-> "The engineer's workflow at end of day is: type /summarise, answer a couple of quick clarifying questions if they come up, then copy-paste the result into the standup channel. The whole thing takes under 30 seconds — that was the target we set in the proposal."
+> "The engineer's workflow at end of day is: type /summarise, review the generated summary, then copy-paste the result into the standup channel. The whole thing takes under 30 seconds — that was the target we set in the proposal."
 
 > "The summary automatically includes GitHub and Linear activity without the engineer doing anything extra. Commits, PRs, and issue status changes are all synced throughout the day — the engineer doesn't need to remember or manually list them."
 
@@ -214,7 +199,7 @@
 > - **7 slash commands** — /did, /blocker, /edit, /delete, /summarise, /auth, /reminders — all working in production
 > - **GitHub integration** — OAuth, commit sync, PR tracking, clickable links in summaries
 > - **Linear integration** — OAuth, issue status tracking, project routing
-> - **AI summaries** — structured output matching the format in the proposal, with clarifying questions when needed
+> - **AI summaries** — structured output matching the format in the proposal, generated directly from synced context
 > - **Reminders** — timezone-aware, configurable per engineer
 > - **Security** — AES-256 token encryption, one-time auth links with 24hr expiry, soft deletes
 > - **Deployed** — live on Railway right now"
@@ -244,7 +229,7 @@
 - [ ] **Create test data.** Log 2-3 `/did` entries and 1 `/blocker` so `/summarise` has content to work with
 - [ ] **Make a real commit.** Push at least one commit to the connected GitHub repo so GitHub activity appears in the summary
 - [ ] **Move a Linear issue.** Change the status of an issue (e.g., move to "In Review") so Linear activity appears
-- [ ] **Test `/summarise` once end-to-end.** Make sure the AI generates a summary without errors. If it asks questions, answer them. Confirm the final output looks clean
+- [ ] **Test `/summarise` once end-to-end.** Make sure the AI generates a summary without errors and the final output looks clean
 - [ ] **Verify the dashboard loads.** Open the auth link, confirm both GitHub and Linear show as connected with green dots, confirm Project Routing shows the mapped repo
 - [ ] **Have two windows ready:** Slack (with the bot DM open) and a browser (with the dashboard)
 - [ ] **Check Railway deployment is up.** Hit the app URL in browser — should load without errors

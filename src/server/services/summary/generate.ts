@@ -96,10 +96,6 @@ export async function generateStandupSummary(input: {
     };
   }
 
-  if (aiResult) {
-    return aiResult;
-  }
-
   const fallback = buildFallbackSummary({
     updateNo: input.updateNo,
     period: input.period,
@@ -108,7 +104,13 @@ export async function generateStandupSummary(input: {
   });
 
   if (!fallback.summary) {
-    return fallback;
+    return aiResult
+      ? {
+          ...aiResult,
+          questions: [],
+          requestCommits: [],
+        }
+      : fallback;
   }
 
   return {

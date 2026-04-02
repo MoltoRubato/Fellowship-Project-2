@@ -6,7 +6,7 @@ It lets each engineer:
 - connect GitHub and Linear
 - log updates and blockers from Slack
 - generate standup summaries from manual logs plus synced GitHub/Linear activity
-- answer follow-up clarification questions in Slack modals
+- generate those summaries directly in Slack without follow-up prompts
 - control reminder timing and schedule per user
 
 ## Stack
@@ -69,7 +69,7 @@ Entries are stored in `log_entries` and numbered per user, per local day.
 - synced GitHub commits / PRs
 - synced Linear issue activity
 
-If the model needs more detail, it asks clarifying questions in Slack DMs.
+The bot posts a best-effort summary immediately instead of asking clarifying questions.
 
 ### 5. Reminders
 
@@ -108,7 +108,7 @@ Useful service areas:
 - `src/server/services/integrations/`
   GitHub and Linear OAuth + activity sync
 - `src/bot/commands/`
-  Slack command handlers and summary question flow
+  Slack command handlers and summary delivery flow
 
 ## Environment Variables
 
@@ -257,7 +257,7 @@ Deletes a recent manual entry.
 
 ### `/summarise`
 
-Generates a standup summary, optionally with follow-up clarification questions.
+Generates a standup summary immediately in Slack.
 
 ### `/reminders`
 
