@@ -1,6 +1,5 @@
 import { EntrySource } from "@prisma/client";
 import { db } from "@/server/db";
-import { reserveNextDailyLogDisplayIdTx } from "@/server/services/daily-sequences";
 import { getSlackDateKey } from "@/server/services/slack";
 import type { SummaryPeriod } from "@/server/services/summary";
 import { getSummaryPeriodDateScope } from "@/server/services/summary/period-scope";
@@ -8,6 +7,7 @@ import { normalizeRepo } from "./repo";
 import type { LoggedEntryInput } from "./types";
 import { resolveProjectForUser, touchProject } from "./projects";
 import { ensureSlackUser, getUserContextBySlackId } from "./users";
+import { reserveNextLogDisplayIdTx, realignNextLogDisplayIdTx } from "./log-display-ids";
 
 async function getCurrentSlackDateKey(slackUserId: string) {
   return getSlackDateKey(slackUserId, new Date());
@@ -36,7 +36,7 @@ export async function createLogEntryForUser(
       }
     }
 
-    const displayId = await reserveNextDailyLogDisplayIdTx(tx, user.id, displayDateKey);
+    const displayId = await reserveNextLogDisplayIdTx(tx, user.id, displayDateKey);
 
     return tx.logEntry.create({
       data: {
@@ -210,33 +210,45 @@ export async function deleteManualEntryById(slackUserId: string, entryId: string
   }
   const currentDateKey = await getCurrentSlackDateKey(slackUserId);
 
-  const entry = await db.logEntry.findFirst({
-    where: {
-      userId: user.id,
-      id: entryId,
-      deletedAt: null,
-      displayDateKey: currentDateKey,
-      source: {
-        in: [EntrySource.manual, EntrySource.dm],
+  return db.$transaction(async (tx) => {
+    const entry = await tx.logEntry.findFirst({
+      where: {
+        userId: user.id,
+        id: entryId,
+        deletedAt: null,
+        displayDateKey: currentDateKey,
+        source: {
+          in: [EntrySource.manual, EntrySource.dm],
+        },
       },
-    },
-    include: {
-      project: true,
-    },
-  });
+      include: {
+        project: true,
+      },
+    });
 
-  if (!entry) {
-    return null;
-  }
+    if (!entry) {
+      return null;
+    }
 
-  return db.logEntry.update({
-    where: { id: entry.id },
-    data: {
-      deletedAt: new Date(),
-    },
-    include: {
-      project: true,
-    },
+    const deletedEntry = await tx.logEntry.update({
+      where: { id: entry.id },
+      data: {
+        deletedAt: new Date(),
+      },
+      include: {
+        project: true,
+      },
+    });
+
+    await realignNextLogDisplayIdTx(tx, {
+      userId: user.id,
+      dateKey: currentDateKey,
+    });
+
+    return {
+      ...deletedEntry,
+      displayId: entry.displayId,
+    };
   });
 }
 
