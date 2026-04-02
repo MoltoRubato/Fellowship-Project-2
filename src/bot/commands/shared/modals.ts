@@ -3,6 +3,9 @@ import { normalizeRepo } from "@/server/services/standup";
 import {
   REPO_SELECT_BLOCK_ID,
   REPO_SELECT_ACTION_ID,
+  SUMMARY_REPOS_SELECT_BLOCK_ID,
+  SUMMARY_REPOS_SELECT_ACTION_ID,
+  SUMMARY_ALL_REPOS_OPTION_VALUE,
   REPO_INPUT_BLOCK_ID,
   REPO_INPUT_ACTION_ID,
   ENTRY_SELECT_BLOCK_ID,
@@ -25,6 +28,27 @@ export function resolveRepoFromModal(view: ViewArgs["view"]) {
       : undefined;
 
   return normalizeRepo(selectedRepo ?? typedRepo ?? null);
+}
+
+export function resolveSummaryReposFromModal(view: ViewArgs["view"]) {
+  const selectedOptions =
+    view.state.values[SUMMARY_REPOS_SELECT_BLOCK_ID]?.[SUMMARY_REPOS_SELECT_ACTION_ID] &&
+    "selected_options" in view.state.values[SUMMARY_REPOS_SELECT_BLOCK_ID][SUMMARY_REPOS_SELECT_ACTION_ID]
+      ? view.state.values[SUMMARY_REPOS_SELECT_BLOCK_ID][SUMMARY_REPOS_SELECT_ACTION_ID].selected_options ?? []
+      : [];
+
+  const normalizedRepos = selectedOptions
+    .map((option) => normalizeRepo(option?.value))
+    .filter((repo): repo is string => Boolean(repo));
+  const includesAllRepos = selectedOptions.some(
+    (option) => option?.value === SUMMARY_ALL_REPOS_OPTION_VALUE,
+  );
+
+  if (includesAllRepos || normalizedRepos.length === 0) {
+    return null;
+  }
+
+  return [...new Set(normalizedRepos)];
 }
 
 export function resolveEntryIdFromModal(view: ViewArgs["view"]) {

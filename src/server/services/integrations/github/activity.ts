@@ -3,6 +3,87 @@ import { decrypt } from "@/lib/crypto";
 import type { GithubActivityItem, GithubVisibleRepo, GithubConnectionSnapshot } from "./types";
 import { createGithubClient, parseScopeHeader, buildPermissionWarning, getGithubAccount } from "./client";
 
+export function buildPullRequestContent(repo: string, title: string, status: "merged" | "closed" | "updated") {
+  if (status === "merged") {
+    return `PR merged in ${repo}: ${title}`;
+  }
+
+  if (status === "closed") {
+    return `PR closed in ${repo}: ${title}`;
+  }
+
+  return `PR updated in ${repo}: ${title}`;
+}
+
+export function getPullRequestStatus(input: {
+  mergedAt?: string | null;
+  closedAt?: string | null;
+  updatedAt?: string | null;
+  state?: string | null;
+}) {
+  if (input.mergedAt) {
+    return {
+      status: "merged" as const,
+      createdAt: new Date(input.mergedAt),
+    };
+  }
+
+  if (input.state === "closed") {
+    const closedAt = input.closedAt ?? input.updatedAt ?? null;
+    return {
+      status: "closed" as const,
+      createdAt: closedAt ? new Date(closedAt) : null,
+    };
+  }
+
+  return {
+    status: "updated" as const,
+    createdAt: input.updatedAt ? new Date(input.updatedAt) : null,
+  };
+}
+
+export function parseRepoFromApiUrl(url?: string | null) {
+  if (!url) {
+    return null;
+  }
+
+  const match = url.match(/\/repos\/([^/]+\/[^/]+)$/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+export function buildPullRequestExternalId(
+  repo: string,
+  pullNumber: number,
+  status: string,
+  timestamp: string | null,
+) {
+  return `github-pr:${repo}:${pullNumber}:${status}:${timestamp ?? "unknown"}`;
+}
+
+export function getActivityDedupeKey(item: GithubActivityItem) {
+  if (item.source === "github_pr" && item.externalUrl) {
+    return `github-pr-url:${item.externalUrl}`;
+  }
+
+  return `github:${item.externalId}`;
+}
+
+export function getActivityPriority(item: GithubActivityItem) {
+  if (item.source !== "github_pr") {
+    return 0;
+  }
+
+  if (item.content.startsWith("PR merged")) {
+    return 3;
+  }
+
+  if (item.content.startsWith("PR closed")) {
+    return 2;
+  }
+
+  return 1;
+}
+
 async function loadGithubReposFromAccount(account: Account) {
   const token = decrypt(account.accessToken);
   const octokit = createGithubClient(token);
@@ -114,6 +195,96 @@ async function loadRecentCommitActivity(account: Account, since: Date, repoFilte
         createdAt,
       });
     }
+  }
+
+  return results;
+}
+
+async function loadRecentPullRequestActivity(account: Account, since: Date, repoFilter?: string | null) {
+  const token = decrypt(account.accessToken);
+  const octokit = createGithubClient(token);
+  const username = account.username?.trim();
+  if (!username) {
+    return [] as GithubActivityItem[];
+  }
+
+  const queryParts = [
+    "is:pr",
+    `author:${username}`,
+    `updated:>=${since.toISOString().slice(0, 10)}`,
+  ];
+  if (repoFilter) {
+    queryParts.push(`repo:${repoFilter}`);
+  }
+
+  const search = await octokit.rest.search.issuesAndPullRequests({
+    q: queryParts.join(" "),
+    sort: "updated",
+    order: "desc",
+    per_page: 50,
+  });
+
+  const results: GithubActivityItem[] = [];
+
+  for (const item of search.data.items) {
+    const repo = parseRepoFromApiUrl(item.repository_url);
+    const title = item.title?.trim();
+    const pullNumber = item.number;
+    const htmlUrl = item.html_url?.trim();
+
+    if (!repo || !title || !pullNumber || !htmlUrl) {
+      continue;
+    }
+
+    if (repoFilter && repo !== repoFilter.toLowerCase()) {
+      continue;
+    }
+
+    let mergedAt: string | null = null;
+    let closedAt: string | null = item.closed_at ?? null;
+    let updatedAt: string | null = item.updated_at ?? null;
+    let state = item.state ?? null;
+
+    try {
+      const [owner, repoName] = repo.split("/");
+      const pull = await octokit.rest.pulls.get({
+        owner,
+        repo: repoName,
+        pull_number: pullNumber,
+      });
+      mergedAt = pull.data.merged_at ?? null;
+      closedAt = pull.data.closed_at ?? closedAt;
+      updatedAt = pull.data.updated_at ?? updatedAt;
+      state = pull.data.state ?? state;
+    } catch {
+      // Fall back to the search result when the detailed pull request fetch fails.
+    }
+
+    const statusInfo = getPullRequestStatus({
+      mergedAt,
+      closedAt,
+      updatedAt,
+      state,
+    });
+
+    if (!statusInfo.createdAt || statusInfo.createdAt < since) {
+      continue;
+    }
+
+    results.push({
+      repo,
+      title,
+      content: buildPullRequestContent(repo, title, statusInfo.status),
+      source: "github_pr",
+      externalId: buildPullRequestExternalId(
+        repo,
+        pullNumber,
+        statusInfo.status,
+        statusInfo.createdAt.toISOString(),
+      ),
+      externalUrl: htmlUrl,
+      createdAt: statusInfo.createdAt,
+    });
   }
 
   return results;
@@ -242,10 +413,29 @@ export async function fetchGithubActivity(
   }
 
   const recentCommitActivity = await loadRecentCommitActivity(account, since, repoFilter);
+  const recentPullRequestActivity = await loadRecentPullRequestActivity(account, since, repoFilter);
   const deduped = new Map<string, GithubActivityItem>();
 
-  for (const item of [...results, ...recentCommitActivity]) {
-    deduped.set(item.externalId, item);
+  for (const item of [...results, ...recentCommitActivity, ...recentPullRequestActivity]) {
+    const key = getActivityDedupeKey(item);
+    const existing = deduped.get(key);
+
+    if (!existing) {
+      deduped.set(key, item);
+      continue;
+    }
+
+    if (getActivityPriority(item) > getActivityPriority(existing)) {
+      deduped.set(key, item);
+      continue;
+    }
+
+    if (
+      getActivityPriority(item) === getActivityPriority(existing) &&
+      item.createdAt.getTime() > existing.createdAt.getTime()
+    ) {
+      deduped.set(key, item);
+    }
   }
 
   return [...deduped.values()].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());

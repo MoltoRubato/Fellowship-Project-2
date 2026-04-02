@@ -12,6 +12,8 @@ Important goals:
 - Otherwise prefer a GitHub PR title for the group heading.
 - Otherwise use the ticket identifier alone.
 - Put related updates, commits, and PR activity as nested bullets underneath that heading.
+- Never leave a top-level heading without at least one nested bullet.
+- If you cannot support a heading with a concrete nested update, fold that work into `Other` instead.
 - Do not ask the user any clarifying or follow-up questions.
 
 Formatting rules for the `summary` field:

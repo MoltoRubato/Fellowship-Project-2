@@ -70,7 +70,7 @@ Entries are stored in `log_entries` and numbered per user, per local day.
 - synced Linear issue activity
 
 The bot posts a best-effort summary immediately instead of asking clarifying questions.
-It can summarise across all active repos by default, or across whichever repos you pass directly in the command.
+It opens a repo picker modal with `All repos` selected by default, and you can narrow it to one or many repos before generating.
 
 ### 5. Reminders
 
@@ -259,7 +259,8 @@ Deletes a recent manual entry.
 ### `/summarise`
 
 Generates a standup summary immediately in Slack.
-Supports `/summarise`, `/summarise week`, or `/summarise repo/one repo/two week`.
+Supports `/summarise` or `/summarise week`.
+If you include repos in the command, they are used to prefill the repo picker modal.
 
 ### `/reminders`
 

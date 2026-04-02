@@ -1,12 +1,13 @@
 import { EntrySource } from "@prisma/client";
 import type { SummaryLogEntry } from "./types";
-import { buildLinearTaskText } from "./task-processing";
+import { buildLinearTaskText, extractTicketIdentifier, parseCommitEntry, truncateLine } from "./task-processing";
 import { getEntrySourceRef } from "./source-refs";
 
 const TOP_LEVEL_BULLET_PATTERN = /^-\s+/;
 const NESTED_BULLET_PATTERN = /^\s{2,}-\s+/;
 const EXISTING_LINK_PATTERN = /<https?:\/\/[^|>]+\|[^>]+>|https?:\/\/\S+/i;
 const REF_PATTERN = /\s*\[ref:([a-z0-9_]+)\]/gi;
+const OTHER_VISIBLE_LIMIT = 5;
 
 const STOP_WORDS = new Set([
   "a",
@@ -56,6 +57,23 @@ type LinkCandidate = {
   url: string;
   aliases: string[];
   source: SummaryLogEntry["source"];
+  entry: SummaryLogEntry;
+};
+
+type SummaryGroupLine = {
+  text: string;
+  refs: string[];
+};
+
+type ParsedSummaryGroup = {
+  title: string;
+  titleRefs: string[];
+  items: SummaryGroupLine[];
+};
+
+type ResolvedGroupLink = {
+  url: string;
+  source: SummaryLogEntry["source"] | "compare";
 };
 
 function normalizeText(value: string) {
@@ -113,6 +131,18 @@ function stripConventionalCommitPrefix(value: string) {
   return value.replace(/^(feat|fix|refactor|chore|docs|style|test|perf)(\([^)]+\))?!?:\s*/i, "").trim();
 }
 
+function stripRepoPrefixedCommit(value: string) {
+  return value.replace(/^Commit to .*?:\s*/i, "").trim();
+}
+
+function stripTicketPrefix(value: string, ticket: string | null) {
+  if (!ticket) {
+    return value.trim();
+  }
+
+  return value.replace(new RegExp(`^${ticket}\\s*[:\\-]?\\s*`, "i"), "").trim();
+}
+
 function buildLinearAliases(entry: SummaryLogEntry) {
   const aliases = [
     entry.title ?? "",
@@ -157,6 +187,7 @@ function buildLinkCandidates(entries: SummaryLogEntry[]) {
       url: entry.externalUrl as string,
       aliases: buildAliases(entry),
       source: entry.source,
+      entry,
     }));
 }
 
@@ -277,17 +308,398 @@ function buildExactCandidates(
   return exact;
 }
 
-function formatNestedLink(candidate: LinkCandidate) {
-  const label =
-    candidate.source === EntrySource.github_commit
-      ? "commit"
-      : candidate.source === EntrySource.github_pr
-        ? "PR"
-        : candidate.source === EntrySource.linear_issue
-          ? "ticket"
-          : "link";
+function extractGroupTicket(group: ParsedSummaryGroup) {
+  return extractTicketIdentifier(group.title, ...group.items.map((item) => item.text));
+}
 
-  return `<${candidate.url}|${label}>`;
+function isOtherGroupTitle(title: string) {
+  return normalizeText(title) === "other";
+}
+
+function getEntryTicket(entry: SummaryLogEntry) {
+  return extractTicketIdentifier(entry.title ?? null, entry.content);
+}
+
+function buildCompareUrl(entries: SummaryLogEntry[]) {
+  const commits = entries
+    .map((entry) => parseCommitEntry(entry))
+    .filter((entry): entry is NonNullable<ReturnType<typeof parseCommitEntry>> => Boolean(entry))
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+
+  if (commits.length < 2) {
+    return null;
+  }
+
+  const repos = [...new Set(commits.map((commit) => commit.repo))];
+  if (repos.length !== 1) {
+    return null;
+  }
+
+  const uniqueShas = commits
+    .map((commit) => commit.sha)
+    .filter((sha, index, all) => all.indexOf(sha) === index);
+
+  if (uniqueShas.length < 2) {
+    return null;
+  }
+
+  return `https://github.com/${repos[0]}/compare/${uniqueShas[0]}..${uniqueShas[uniqueShas.length - 1]}`;
+}
+
+function formatFallbackGithubPrItem(entry: SummaryLogEntry, groupTitle: string, ticket: string | null) {
+  const contentMatch = entry.content.match(/^PR\s+(.+?)\s+in\s+[^:]+:\s*(.+)$/i);
+  const action = contentMatch?.[1]?.trim() ?? "";
+  const rawTitle = contentMatch?.[2]?.trim() || entry.title || "";
+  const title = stripTicketPrefix(rawTitle, ticket);
+
+  if (title && normalizeText(title) !== normalizeText(stripTicketPrefix(groupTitle, ticket))) {
+    if (action) {
+      const formattedAction = action.charAt(0).toUpperCase() + action.slice(1).toLowerCase();
+      return truncateLine(`${formattedAction} PR: ${title}`);
+    }
+
+    return truncateLine(title);
+  }
+
+  if (action) {
+    const formattedAction = action.charAt(0).toUpperCase() + action.slice(1).toLowerCase();
+    return truncateLine(`${formattedAction} PR`);
+  }
+
+  return "Updated PR";
+}
+
+function formatFallbackEntryItem(entry: SummaryLogEntry, groupTitle: string) {
+  const ticket = getEntryTicket(entry);
+  const cleanedGroupTitle = stripTicketPrefix(groupTitle, ticket);
+
+  if (entry.source === EntrySource.github_commit) {
+    const text = stripTicketPrefix(stripRepoPrefixedCommit(entry.title ?? entry.content), ticket);
+    return truncateLine(text || "Updated code");
+  }
+
+  if (entry.source === EntrySource.github_pr) {
+    return formatFallbackGithubPrItem(entry, groupTitle, ticket);
+  }
+
+  if (entry.source === EntrySource.linear_issue) {
+    const content = stripTicketPrefix(entry.content, ticket);
+    if (content && normalizeText(content) !== normalizeText(cleanedGroupTitle)) {
+      return truncateLine(content.charAt(0).toUpperCase() + content.slice(1));
+    }
+
+    const title = stripTicketPrefix(entry.title ?? "", ticket);
+    if (title && normalizeText(title) !== normalizeText(cleanedGroupTitle)) {
+      return truncateLine(title);
+    }
+
+    return "Updated Linear issue";
+  }
+
+  const text = stripTicketPrefix(entry.content, ticket);
+  if (text && normalizeText(text) !== normalizeText(cleanedGroupTitle)) {
+    return truncateLine(text);
+  }
+
+  return "Worked on this";
+}
+
+function buildFallbackGroupItems(
+  group: ParsedSummaryGroup,
+  matchedEntries: SummaryLogEntry[],
+  primaryLink: ResolvedGroupLink | null,
+) {
+  if (!matchedEntries.length) {
+    return [];
+  }
+
+  const sortedEntries = matchedEntries
+    .slice()
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  const commitEntries = sortedEntries.filter((entry) => entry.source === EntrySource.github_commit);
+  const candidateEntries =
+    commitEntries.length > 0
+      ? commitEntries
+      : (() => {
+          if (!primaryLink) {
+            return sortedEntries;
+          }
+
+          const nonPrimaryEntries = sortedEntries.filter(
+            (entry) => !(entry.source === primaryLink.source && entry.externalUrl === primaryLink.url),
+          );
+
+          return nonPrimaryEntries.length ? nonPrimaryEntries : sortedEntries;
+        })();
+
+  const seen = new Set<string>();
+  const items: string[] = [];
+
+  for (const entry of candidateEntries) {
+    const text = formatFallbackEntryItem(entry, group.title);
+    const key = normalizeText(text);
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    items.push(text);
+  }
+
+  return items;
+}
+
+function buildVisibleGroupItems(
+  group: ParsedSummaryGroup,
+  matchedEntries: SummaryLogEntry[],
+  primaryLink: ResolvedGroupLink | null,
+) {
+  const explicitItems = group.items.map((item) => item.text);
+  if (explicitItems.length) {
+    return isOtherGroupTitle(group.title) ? explicitItems.slice(0, OTHER_VISIBLE_LIMIT) : explicitItems;
+  }
+
+  const generatedItems = buildFallbackGroupItems(group, matchedEntries, primaryLink);
+  return isOtherGroupTitle(group.title) ? generatedItems.slice(0, OTHER_VISIBLE_LIMIT) : generatedItems;
+}
+
+function parseSummaryStructure(summary: string) {
+  const header: string[] = [];
+  const groups: ParsedSummaryGroup[] = [];
+  const nextUp: string[] = [];
+  const blockers: string[] = [];
+  let section: "header" | "groups" | "next_up" | "blockers" = "header";
+  let currentGroup: ParsedSummaryGroup | null = null;
+
+  for (const rawLine of summary.split("\n")) {
+    const refs = extractRefs(rawLine);
+    const cleanedLine = stripRefs(rawLine);
+    const trimmed = cleanedLine.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    if (/^Next up:\s*$/i.test(trimmed)) {
+      if (currentGroup) {
+        groups.push(currentGroup);
+        currentGroup = null;
+      }
+      section = "next_up";
+      continue;
+    }
+
+    if (/^Blockers:\s*$/i.test(trimmed)) {
+      if (currentGroup) {
+        groups.push(currentGroup);
+        currentGroup = null;
+      }
+      section = "blockers";
+      continue;
+    }
+
+    if (section === "header") {
+      if (TOP_LEVEL_BULLET_PATTERN.test(cleanedLine)) {
+        section = "groups";
+      } else {
+        header.push(trimmed);
+        continue;
+      }
+    }
+
+    if (section === "groups") {
+      if (TOP_LEVEL_BULLET_PATTERN.test(cleanedLine)) {
+        if (currentGroup) {
+          groups.push(currentGroup);
+        }
+        currentGroup = {
+          title: trimmed.replace(TOP_LEVEL_BULLET_PATTERN, "").trim(),
+          titleRefs: refs,
+          items: [],
+        };
+        continue;
+      }
+
+      if (NESTED_BULLET_PATTERN.test(cleanedLine) && currentGroup) {
+        currentGroup.items.push({
+          text: cleanedLine.replace(NESTED_BULLET_PATTERN, "").trim(),
+          refs,
+        });
+      }
+      continue;
+    }
+
+    if (section === "next_up" && TOP_LEVEL_BULLET_PATTERN.test(cleanedLine)) {
+      nextUp.push(trimmed.replace(TOP_LEVEL_BULLET_PATTERN, "").trim());
+      continue;
+    }
+
+    if (section === "blockers" && TOP_LEVEL_BULLET_PATTERN.test(cleanedLine)) {
+      blockers.push(trimmed.replace(TOP_LEVEL_BULLET_PATTERN, "").trim());
+    }
+  }
+
+  if (currentGroup) {
+    groups.push(currentGroup);
+  }
+
+  return { header, groups, nextUp, blockers };
+}
+
+function resolveGroupEntries(
+  group: ParsedSummaryGroup,
+  entries: SummaryLogEntry[],
+  candidates: LinkCandidate[],
+  candidatesByRef: Map<string, LinkCandidate>,
+) {
+  const matched = new Map<string, SummaryLogEntry>();
+  const addEntry = (entry?: SummaryLogEntry | null) => {
+    if (!entry) {
+      return;
+    }
+    matched.set(entry.id, entry);
+  };
+  const addCandidate = (candidate?: LinkCandidate | null) => addEntry(candidate?.entry ?? null);
+
+  for (const candidate of buildExactCandidates(group.titleRefs, candidatesByRef, "group")) {
+    addCandidate(candidate);
+  }
+
+  if (!matched.size) {
+    addCandidate(findCandidate(group.title, candidates, "group"));
+  }
+
+  for (const item of group.items) {
+    const exactItemCandidates = buildExactCandidates(item.refs, candidatesByRef, "item");
+    if (exactItemCandidates.length) {
+      exactItemCandidates.forEach((candidate) => addCandidate(candidate));
+      continue;
+    }
+
+    addCandidate(findCandidate(item.text, candidates, "item"));
+  }
+
+  const ticket = extractGroupTicket(group) ?? [...matched.values()].map((entry) => getEntryTicket(entry)).find(Boolean) ?? null;
+  if (ticket) {
+    for (const entry of entries) {
+      if (getEntryTicket(entry) === ticket) {
+        addEntry(entry);
+      }
+    }
+  }
+
+  return [...matched.values()];
+}
+
+function getUniqueUrls(entries: SummaryLogEntry[], source: SummaryLogEntry["source"]) {
+  return [...new Set(
+    entries
+      .filter((entry) => entry.source === source && entry.externalUrl)
+      .map((entry) => entry.externalUrl as string),
+  )];
+}
+
+function buildCommitWorkLink(entries: SummaryLogEntry[]) {
+  const compareUrl = buildCompareUrl(entries);
+  if (compareUrl) {
+    return compareUrl;
+  }
+
+  const commits = entries
+    .map((entry) => parseCommitEntry(entry))
+    .filter((entry): entry is NonNullable<ReturnType<typeof parseCommitEntry>> => Boolean(entry))
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  const repos = [...new Set(commits.map((commit) => commit.repo))];
+  const uniqueShas = [...new Set(commits.map((commit) => commit.sha))];
+
+  if (repos.length !== 1 || uniqueShas.length !== 1) {
+    return null;
+  }
+
+  return entries.find(
+    (entry) => entry.source === EntrySource.github_commit && entry.externalUrl?.includes(`/commit/${uniqueShas[0]}`),
+  )?.externalUrl ?? null;
+}
+
+function choosePrimaryGroupLink(
+  group: ParsedSummaryGroup,
+  matchedEntries: SummaryLogEntry[],
+  candidatesByRef: Map<string, LinkCandidate>,
+): ResolvedGroupLink | null {
+  if (isOtherGroupTitle(group.title)) {
+    return null;
+  }
+
+  const titleCandidates = group.titleRefs
+    .map((ref) => candidatesByRef.get(ref) ?? null)
+    .filter((candidate): candidate is LinkCandidate => Boolean(candidate));
+  const exactLinear = titleCandidates.find((candidate) => candidate.source === EntrySource.linear_issue);
+  if (exactLinear) {
+    return { url: exactLinear.url, source: exactLinear.source };
+  }
+
+  const exactPr = titleCandidates.find((candidate) => candidate.source === EntrySource.github_pr);
+  if (exactPr) {
+    return { url: exactPr.url, source: exactPr.source };
+  }
+
+  const linearUrls = getUniqueUrls(matchedEntries, EntrySource.linear_issue);
+  if (linearUrls.length === 1) {
+    return { url: linearUrls[0]!, source: EntrySource.linear_issue };
+  }
+
+  const prUrls = getUniqueUrls(matchedEntries, EntrySource.github_pr);
+  if (prUrls.length === 1) {
+    return { url: prUrls[0]!, source: EntrySource.github_pr };
+  }
+
+  return null;
+}
+
+function chooseSecondaryGroupLink(
+  group: ParsedSummaryGroup,
+  matchedEntries: SummaryLogEntry[],
+  primaryLink: ResolvedGroupLink | null,
+): ResolvedGroupLink | null {
+  if (primaryLink?.source === EntrySource.github_pr) {
+    return null;
+  }
+
+  if (isOtherGroupTitle(group.title)) {
+    const compareUrl = buildCompareUrl(matchedEntries);
+    return compareUrl ? { url: compareUrl, source: "compare" } : null;
+  }
+
+  const prUrls = getUniqueUrls(matchedEntries, EntrySource.github_pr);
+  if (prUrls.length === 1 && prUrls[0] !== primaryLink?.url) {
+    return { url: prUrls[0]!, source: EntrySource.github_pr };
+  }
+
+  const commitWorkUrl = buildCommitWorkLink(matchedEntries);
+  if (commitWorkUrl && commitWorkUrl !== primaryLink?.url) {
+    return {
+      url: commitWorkUrl,
+      source: commitWorkUrl.includes("/compare/") ? "compare" : EntrySource.github_commit,
+    };
+  }
+
+  return null;
+}
+
+function getSecondaryLinkLabel(link: ResolvedGroupLink) {
+  if (link.source === EntrySource.github_pr) {
+    return "link to PR";
+  }
+
+  if (link.source === "compare") {
+    return "link to commits";
+  }
+
+  if (link.source === EntrySource.github_commit) {
+    return "link to commit";
+  }
+
+  return "link";
 }
 
 export function isStructuredTicketSummary(summary: string) {
@@ -315,91 +727,60 @@ export function renderSummaryForSlack(summary: string, entries: SummaryLogEntry[
       .filter((candidate): candidate is LinkCandidate & { ref: string } => Boolean(candidate.ref))
       .map((candidate) => [candidate.ref, candidate]),
   );
+  const structure = parseSummaryStructure(summary);
+  const output: string[] = [];
+  const assignedEntryIds = new Set<string>();
 
-  let inGroups = false;
-  let section: "header" | "groups" | "next_up" | "blockers" = "header";
+  output.push(...structure.header);
 
-  return summary
-    .split("\n")
-    .map((rawLine) => {
-      const refs = extractRefs(rawLine);
-      const cleanedLine = stripRefs(rawLine);
-      const trimmed = cleanedLine.trim();
+  if (structure.header.length && structure.groups.length) {
+    output.push("");
+  }
 
-      if (!trimmed) {
-        return "";
-      }
+  for (const group of structure.groups) {
+    const matchedEntries = isOtherGroupTitle(group.title)
+      ? entries.filter((entry) => !assignedEntryIds.has(entry.id))
+      : resolveGroupEntries(group, entries, candidates, candidatesByRef);
+    const primaryLink = choosePrimaryGroupLink(group, matchedEntries, candidatesByRef);
+    const secondaryLink = chooseSecondaryGroupLink(group, matchedEntries, primaryLink);
+    const visibleItems = buildVisibleGroupItems(group, matchedEntries, primaryLink);
 
-      if (/^Next up:\s*$/i.test(trimmed)) {
-        section = "next_up";
-        return "Next up:";
-      }
+    if (!visibleItems.length) {
+      continue;
+    }
 
-      if (/^Blockers:\s*$/i.test(trimmed)) {
-        section = "blockers";
-        return "Blockers:";
-      }
+    if (!isOtherGroupTitle(group.title)) {
+      matchedEntries.forEach((entry) => assignedEntryIds.add(entry.id));
+    }
 
-      if (TOP_LEVEL_BULLET_PATTERN.test(cleanedLine)) {
-        if (section === "header") {
-          inGroups = true;
-          section = "groups";
-        }
+    const titleLine =
+      primaryLink && !hasExistingLink(group.title)
+        ? `• <${primaryLink.url}|${escapeSlackLinkText(group.title)}>`
+        : `• ${group.title}`;
+    output.push(titleLine);
 
-        if (section === "groups") {
-          const text = trimmed.replace(TOP_LEVEL_BULLET_PATTERN, "").trim();
-          if (!text) {
-            return "";
-          }
+    for (const item of visibleItems) {
+      output.push(`  ◦ ${item}`);
+    }
 
-          if (hasExistingLink(text)) {
-            return `• ${text}`;
-          }
+    if (secondaryLink) {
+      output.push(`    ↳ <${secondaryLink.url}|${getSecondaryLinkLabel(secondaryLink)}>`);
+    }
+  }
 
-          const [exact] = buildExactCandidates(refs, candidatesByRef, "group");
-          const heuristic = exact ? null : findCandidate(text, candidates, "group");
-          const candidate = exact ?? heuristic;
+  if (structure.nextUp.length) {
+    output.push("", "Next up:");
+    for (const line of structure.nextUp) {
+      output.push(`• ${line}`);
+    }
+  }
 
-          if (candidate) {
-            return `• <${candidate.url}|${escapeSlackLinkText(text)}>`;
-          }
+  if (structure.blockers.length) {
+    output.push("", "Blockers:");
+    for (const line of structure.blockers) {
+      output.push(`• ${line}`);
+    }
+  }
 
-          return `• ${text}`;
-        }
-
-        return `• ${trimmed.replace(TOP_LEVEL_BULLET_PATTERN, "").trim()}`;
-      }
-
-      if (NESTED_BULLET_PATTERN.test(cleanedLine)) {
-        const text = cleanedLine.replace(NESTED_BULLET_PATTERN, "").trim();
-        if (!text) {
-          return "";
-        }
-
-        if (hasExistingLink(text)) {
-          return `  ◦ ${text}`;
-        }
-
-        const exact = buildExactCandidates(refs, candidatesByRef, "item");
-        const heuristic = exact.length ? [] : (() => {
-          const candidate = findCandidate(text, candidates, "item");
-          return candidate ? [candidate] : [];
-        })();
-        const matched = exact.length ? exact : heuristic;
-
-        if (!matched.length) {
-          return `  ◦ ${text}`;
-        }
-
-        return `  ◦ ${text} ${matched.map((candidate) => formatNestedLink(candidate)).join(" ")}`.trimEnd();
-      }
-
-      if (!inGroups) {
-        return trimmed;
-      }
-
-      return trimmed;
-    })
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n");
+  return output.join("\n").replace(/\n{3,}/g, "\n\n");
 }

@@ -4,10 +4,14 @@ import {
   SUMMARY_REPO_PICK_ACTION_ID,
   REPO_SELECT_BLOCK_ID,
   REPO_SELECT_ACTION_ID,
+  SUMMARY_REPOS_SELECT_BLOCK_ID,
+  SUMMARY_REPOS_SELECT_ACTION_ID,
+  SUMMARY_ALL_REPOS_OPTION_VALUE,
   buildProjectOption,
   sortRepoNamesForRepoPicker,
   parseSummaryArgs,
   resolveRepoFromModal,
+  resolveSummaryReposFromModal,
   loadUserForEntryModal,
   maybeSendOnboardingLink,
   postToResponseUrl,
@@ -20,6 +24,7 @@ import {
   getUserContextBySlackId,
   syncConnectedActivity,
   getLastSelfActionedRepo,
+  listEntriesForSummaryPeriod,
 } from "@/server/services/standup";
 import { generateSummaryResult } from "./generate-result";
 import { deliverSummaryOutcome } from "./deliver";
@@ -28,52 +33,97 @@ export async function handleSummarise(args: CommandArgs) {
   const { command, ack, respond, client } = args;
   await ack();
   const { repos, period } = parseSummaryArgs(command.text ?? "");
-  const { created, user } = await loadUserForEntryModal(command.user_id, command.team_id);
-
-  await respond({
-    response_type: "ephemeral",
-    text: "Generating your standup summary...",
-  });
-
-  if (user) {
-    const since = getSummarySyncSince(period);
-    try {
-      await syncConnectedActivity(user, since);
-    } catch (error) {
-      console.error("Activity sync failed", error);
-    }
-  }
-
-  const resolved = await generateSummaryResult({
-    slackUserId: command.user_id,
-    slackTeamId: command.team_id,
-    period,
-    repos,
-    skipSync: true,
-  });
-
-  if (created) {
-    await maybeSendOnboardingLink(command.user_id, command.team_id, true);
-  }
-
-  if (!resolved.ok) {
+  const triggerId = command.trigger_id;
+  if (!triggerId) {
     await respond({
       response_type: "ephemeral",
-      text: resolved.text,
-      replace_original: true,
+      text: "I couldn't open the summary picker. Please try `/summarise` again.",
     });
     return;
   }
 
-  await deliverSummaryOutcome({
-    client,
-    slackUserId: command.user_id,
-    channelId: command.channel_id,
-    period,
-    repos,
-    responseUrl: command.response_url,
-    result: resolved,
+  const { created, user } = await loadUserForEntryModal(command.user_id, command.team_id);
+  const entries = await listEntriesForSummaryPeriod(command.user_id, period);
+  const activeRepos = entries
+    .map((entry) => entry.project?.githubRepo ?? null)
+    .filter((repo): repo is string => Boolean(repo));
+  const fallbackRepos = (user?.projects ?? []).map((project) => project.githubRepo);
+  const repoNames = sortRepoNamesForRepoPicker(
+    [...new Set([...(activeRepos.length ? activeRepos : fallbackRepos), ...repos])],
+    user,
+  );
+  const projectByRepo = new Map((user?.projects ?? []).map((project) => [project.githubRepo, project]));
+  const allReposOption = {
+    text: { type: "plain_text" as const, text: "All repos" },
+    value: SUMMARY_ALL_REPOS_OPTION_VALUE,
+  };
+  const repoOptions = repoNames.map((repo) => {
+    const project = projectByRepo.get(repo);
+    return project ? buildProjectOption(project) : buildProjectOption({ githubRepo: repo });
   });
+  const initialRepoOptions = repos.length
+    ? repoOptions.filter((option) => repos.includes(option.value))
+    : [allReposOption];
+
+  try {
+    await client.views.open({
+      trigger_id: triggerId,
+      view: {
+        type: "modal",
+        callback_id: SUMMARY_MODAL_CALLBACK_ID,
+        private_metadata: JSON.stringify({
+          channelId: command.channel_id,
+          teamId: command.team_id,
+          responseUrl: command.response_url,
+          period,
+          created,
+        }),
+        title: {
+          type: "plain_text",
+          text: "Summarise",
+        },
+        submit: {
+          type: "plain_text",
+          text: "Generate",
+        },
+        close: {
+          type: "plain_text",
+          text: "Cancel",
+        },
+        blocks: [
+          {
+            type: "input",
+            block_id: SUMMARY_REPOS_SELECT_BLOCK_ID,
+            optional: true,
+            label: {
+              type: "plain_text",
+              text: "Repos",
+            },
+            hint: {
+              type: "plain_text",
+              text: "All repos is selected by default. Choose one or more repos to narrow the summary.",
+            },
+            element: {
+              type: "multi_static_select",
+              action_id: SUMMARY_REPOS_SELECT_ACTION_ID,
+              placeholder: {
+                type: "plain_text",
+                text: "Select repos",
+              },
+              options: [allReposOption, ...repoOptions],
+              initial_options: initialRepoOptions,
+            },
+          },
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("Failed to open summary modal", error);
+    await respond({
+      response_type: "ephemeral",
+      text: "I couldn't open the summary picker. Please try `/summarise` again.",
+    });
+  }
 }
 
 export async function handleSummaryRepoPick(args: ActionArgs) {
@@ -176,20 +226,16 @@ export async function handleSummaryModalSubmission(args: ViewArgs) {
     teamId?: string;
     responseUrl?: string;
     period?: SummaryPeriod;
+    created?: boolean;
   };
-  const repo = resolveRepoFromModal(view);
+  const repos =
+    SUMMARY_REPOS_SELECT_BLOCK_ID in view.state.values
+      ? resolveSummaryReposFromModal(view)
+      : (() => {
+          const repo = resolveRepoFromModal(view);
+          return repo ? [repo] : null;
+        })();
   const channelId = metadata.channelId ?? body.user.id;
-
-  if (!repo) {
-    await sendModalConfirmation(
-      client,
-      channelId,
-      body.user.id,
-      "Please choose a repo before generating the summary.",
-      metadata.responseUrl,
-    );
-    return;
-  }
 
   if (metadata.responseUrl) {
     await postToResponseUrl(metadata.responseUrl, {
@@ -203,8 +249,12 @@ export async function handleSummaryModalSubmission(args: ViewArgs) {
     slackUserId: body.user.id,
     slackTeamId: metadata.teamId ?? body.team?.id ?? "",
     period: metadata.period === "week" ? "week" : "today",
-    repos: repo ? [repo] : null,
+    repos,
   });
+
+  if (metadata.created) {
+    await maybeSendOnboardingLink(body.user.id, metadata.teamId ?? body.team?.id ?? "", true);
+  }
 
   if (!resolved.ok) {
     await sendModalConfirmation(client, channelId, body.user.id, resolved.text, metadata.responseUrl);
@@ -216,7 +266,7 @@ export async function handleSummaryModalSubmission(args: ViewArgs) {
     slackUserId: body.user.id,
     channelId,
     period: metadata.period === "week" ? "week" : "today",
-    repos: repo ? [repo] : null,
+    repos,
     responseUrl: metadata.responseUrl,
     result: resolved,
   });
