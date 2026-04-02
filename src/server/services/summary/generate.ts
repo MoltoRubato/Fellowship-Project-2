@@ -3,8 +3,7 @@ import { fetchGithubCommitDetails } from "@/server/services/integrations/github"
 import { parseCommitEntry, buildCommitPromptItems, buildTaskItems, buildBlockerItems } from "./task-processing";
 import { runAiSummary } from "./ai";
 import { buildFallbackSummary } from "./fallback";
-import { ensureLinearActivityCoverage } from "./coverage";
-import { appendMissingSourceLinks } from "./links";
+import { isStructuredTicketSummary, renderSummaryForSlack } from "./slack-format";
 import {
   containsSummaryPlaceholderValue,
   stripPlaceholderPhrases,
@@ -83,14 +82,30 @@ export async function generateStandupSummary(input: {
   });
 
   if (aiResult?.summary) {
+    const sanitizedSummary = sanitizeSummaryPlaceholders(aiResult.summary);
+    if (!isStructuredTicketSummary(sanitizedSummary)) {
+      const fallback = buildFallbackSummary({
+        updateNo: input.updateNo,
+        period: input.period,
+        entries: input.entries,
+        blockers: input.blockers,
+      });
+
+      if (fallback.summary) {
+        return {
+          ...fallback,
+          summary: renderSummaryForSlack(
+            sanitizeSummaryPlaceholders(fallback.summary),
+            input.entries,
+          ),
+        };
+      }
+    }
+
     return {
       ...aiResult,
-      summary: appendMissingSourceLinks(
-        ensureLinearActivityCoverage(
-          sanitizeSummaryPlaceholders(aiResult.summary),
-          input.entries,
-          input.period,
-        ),
+      summary: renderSummaryForSlack(
+        sanitizedSummary,
         input.entries,
       ),
     };
@@ -115,12 +130,8 @@ export async function generateStandupSummary(input: {
 
   return {
     ...fallback,
-    summary: appendMissingSourceLinks(
-      ensureLinearActivityCoverage(
-        sanitizeSummaryPlaceholders(fallback.summary),
-        input.entries,
-        input.period,
-      ),
+    summary: renderSummaryForSlack(
+      sanitizeSummaryPlaceholders(fallback.summary),
       input.entries,
     ),
   };

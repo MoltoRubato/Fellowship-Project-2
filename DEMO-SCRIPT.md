@@ -127,9 +127,7 @@
 **Steps:**
 
 1. Type `/summarise`
-2. If you have entries across multiple repos, a message appears: *"Pick a repo to summarise:"* with a **"Pick repo"** button
-   - Click it, select the demo repo from the modal, click **"Summarise"**
-   - (If only one repo has entries, it skips straight to generation)
+2. If you want to scope it, add one or more repos directly in the command, e.g. `/summarise readmeio/readme readmeio/gitto week`
 3. The bot starts generating. Point out: *"Generating your standup summary..."*
 4. The final summary is posted directly in Slack without any clarification step
 

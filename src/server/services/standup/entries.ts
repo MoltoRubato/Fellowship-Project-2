@@ -3,7 +3,7 @@ import { db } from "@/server/db";
 import { getSlackDateKey } from "@/server/services/slack";
 import type { SummaryPeriod } from "@/server/services/summary";
 import { getSummaryPeriodDateScope } from "@/server/services/summary/period-scope";
-import { normalizeRepo } from "./repo";
+import { normalizeRepo, normalizeRepos } from "./repo";
 import type { LoggedEntryInput } from "./types";
 import { resolveProjectForUser, touchProject } from "./projects";
 import { ensureSlackUser, getUserContextBySlackId } from "./users";
@@ -108,7 +108,7 @@ export async function listEntriesSince(
 export async function listEntriesForSummaryPeriod(
   slackUserId: string,
   period: SummaryPeriod,
-  repo?: string | null,
+  repo?: string | string[] | null,
 ) {
   const user = await getUserContextBySlackId(slackUserId);
   if (!user) {
@@ -116,17 +116,17 @@ export async function listEntriesForSummaryPeriod(
   }
 
   const { startDateKey } = await getSummaryPeriodDateScope(slackUserId, period);
-  const normalizedRepo = normalizeRepo(repo);
+  const normalizedRepos = Array.isArray(repo) ? normalizeRepos(repo) : normalizeRepos([repo]);
 
   return db.logEntry.findMany({
     where: {
       userId: user.id,
       deletedAt: null,
       displayDateKey: period === "today" ? startDateKey : { gte: startDateKey },
-      ...(normalizedRepo
+      ...(normalizedRepos.length
         ? {
             project: {
-              githubRepo: normalizedRepo,
+              githubRepo: { in: normalizedRepos },
             },
           }
         : {}),
@@ -138,23 +138,26 @@ export async function listEntriesForSummaryPeriod(
   });
 }
 
-export async function listActiveBlockers(slackUserId: string, repo?: string | null) {
+export async function listActiveBlockers(
+  slackUserId: string,
+  repo?: string | string[] | null,
+) {
   const user = await getUserContextBySlackId(slackUserId);
   if (!user) {
     return [];
   }
 
-  const normalizedRepo = normalizeRepo(repo);
+  const normalizedRepos = Array.isArray(repo) ? normalizeRepos(repo) : normalizeRepos([repo]);
 
   return db.logEntry.findMany({
     where: {
       userId: user.id,
       entryType: "blocker",
       deletedAt: null,
-      ...(normalizedRepo
+      ...(normalizedRepos.length
         ? {
             project: {
-              githubRepo: normalizedRepo,
+              githubRepo: { in: normalizedRepos },
             },
           }
         : {}),

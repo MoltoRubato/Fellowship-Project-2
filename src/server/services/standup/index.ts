@@ -1,5 +1,5 @@
 export type { UserContext, LoggedEntryInput } from "./types";
-export { isRepoLike, normalizeRepo } from "./repo";
+export { isRepoLike, normalizeRepo, normalizeRepos } from "./repo";
 export {
   ensureSlackUser,
   getUserContextBySlackId,

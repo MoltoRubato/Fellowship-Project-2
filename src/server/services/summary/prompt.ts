@@ -46,7 +46,9 @@ export function buildAiPrompt(input: {
   requestedCommitDetails: GithubCommitDetail[];
 }) {
   const workLabel = input.period === "week" ? "this week's" : "today's";
-  const summaryLabel = input.period === "week" ? "This week's work:" : "Today's work:";
+  const headerLabel = input.period === "week"
+    ? "Weekly update :male-technologist::"
+    : "Daily update :male-technologist::";
   const promptValues = stringifyYaml({
     update_no: input.updateNo,
     blockers: input.blockers,
@@ -57,7 +59,7 @@ export function buildAiPrompt(input: {
   let prompt = promptTemplate
     .replaceAll("{{PROMPT_VALUES}}", promptValues)
     .replaceAll("{{WORK_LABEL}}", workLabel)
-    .replaceAll("{{SUMMARY_LABEL}}", summaryLabel)
+    .replaceAll("{{HEADER_LABEL}}", headerLabel)
     .replaceAll("{{UPDATE_NO}}", String(input.updateNo));
 
   if (input.answers.length) {

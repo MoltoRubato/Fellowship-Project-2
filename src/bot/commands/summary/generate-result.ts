@@ -19,7 +19,7 @@ export async function generateSummaryResult(input: {
   slackUserId: string;
   slackTeamId: string;
   period: SummaryPeriod;
-  repo?: string | null;
+  repos?: string[] | null;
   updateNo?: number;
   answers?: SummaryAnswer[];
   skipSync?: boolean;
@@ -43,8 +43,9 @@ export async function generateSummaryResult(input: {
     }
   }
 
-  const entries = await listEntriesForSummaryPeriod(input.slackUserId, input.period, input.repo);
-  const blockers = await listActiveBlockers(input.slackUserId, input.repo);
+  const scopedRepos = input.repos?.length ? input.repos : null;
+  const entries = await listEntriesForSummaryPeriod(input.slackUserId, input.period, scopedRepos);
+  const blockers = await listActiveBlockers(input.slackUserId, scopedRepos);
 
   if (!entries.length && !blockers.length) {
     return {
@@ -54,8 +55,8 @@ export async function generateSummaryResult(input: {
   }
 
   const projectId =
-    input.repo
-      ? user.projects.find((project) => project.githubRepo === input.repo)?.id ?? null
+    scopedRepos?.length === 1
+      ? user.projects.find((project) => project.githubRepo === scopedRepos[0])?.id ?? null
       : entries.length === 1
         ? entries[0]?.projectId ?? null
         : null;

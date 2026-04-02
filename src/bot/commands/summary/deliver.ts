@@ -14,7 +14,7 @@ export async function deliverSummaryOutcome(input: {
   slackUserId: string;
   channelId: string;
   period: SummaryPeriod;
-  repo?: string | null;
+  repos?: string[] | null;
   responseUrl?: string;
   result: Awaited<ReturnType<typeof generateSummaryResult>> & { ok: true };
 }) {

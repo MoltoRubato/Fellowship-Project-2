@@ -1,4 +1,4 @@
-import { isRepoLike, normalizeRepo } from "@/server/services/standup";
+import { isRepoLike, normalizeRepo, normalizeRepos } from "@/server/services/standup";
 
 export function parseRepoAndText(rawText: string, defaultRepo?: string | null) {
   const trimmed = rawText.trim();
@@ -74,9 +74,12 @@ export function parseDeleteArgs(rawText: string, defaultRepo?: string | null) {
 }
 
 export function parseSummaryArgs(rawText: string) {
-  const parts = rawText.trim().split(/\s+/).filter(Boolean);
+  const parts = rawText
+    .trim()
+    .split(/[\s,]+/)
+    .filter(Boolean);
   let period: "today" | "week" = "today";
-  let repo = null as string | null;
+  const repos: string[] = [];
 
   for (const part of parts) {
     if (part.toLowerCase() === "week") {
@@ -84,10 +87,14 @@ export function parseSummaryArgs(rawText: string) {
       continue;
     }
 
-    if (isRepoLike(part)) {
-      repo = normalizeRepo(part);
+    const normalizedRepo = normalizeRepo(part);
+    if (normalizedRepo) {
+      repos.push(normalizedRepo);
     }
   }
 
-  return { repo, period };
+  return {
+    repos: normalizeRepos(repos),
+    period,
+  };
 }

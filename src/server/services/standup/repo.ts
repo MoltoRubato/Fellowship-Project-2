@@ -12,3 +12,20 @@ export function normalizeRepo(value?: string | null) {
   const normalized = value.trim().replace(/^https?:\/\/github\.com\//i, "").replace(/\/+$/, "");
   return isRepoLike(normalized) ? normalized.toLowerCase() : null;
 }
+
+export function normalizeRepos(values: Array<string | null | undefined>) {
+  const seen = new Set<string>();
+  const repos: string[] = [];
+
+  for (const value of values) {
+    const normalized = normalizeRepo(value);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    repos.push(normalized);
+  }
+
+  return repos;
+}

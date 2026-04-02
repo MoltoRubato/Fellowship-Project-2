@@ -31,6 +31,8 @@ export interface ParsedSummaryResponse {
 }
 
 export interface CommitPromptItem {
+  repo: string;
+  ticket: string | null;
   commit_message: string;
   authors: string[];
   commit_id: string;
@@ -39,6 +41,8 @@ export interface CommitPromptItem {
 }
 
 export interface TaskPromptItem {
+  repo?: string | null;
+  ticket?: string | null;
   task: string;
   status_hint: "completed" | "in_progress" | "unknown";
   source: "manual" | "dm" | "github_pr" | "linear_issue";

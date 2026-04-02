@@ -19,13 +19,14 @@ const COMPLETED_HINT_PATTERN =
   /\b(done|finished|completed|fixed|added|implemented|shipped|merged|resolved|polished|reviewed|closed)\b/i;
 const LINEAR_COMPLETED_STATE_PATTERN = /\bmoved to (done|completed|closed|canceled|cancelled)\b/i;
 const LINEAR_IN_PROGRESS_STATE_PATTERN = /\bmoved to (in progress|doing|in review|review|backlog|todo|planned)\b/i;
+const TICKET_IDENTIFIER_PATTERN = /\b[A-Z]{2,}-\d+\b/;
 
 function extractLinearIdentifier(value?: string | null) {
   if (!value) {
     return null;
   }
 
-  const match = value.match(/\b[A-Z]{2,}-\d+\b/);
+  const match = value.match(TICKET_IDENTIFIER_PATTERN);
   return match?.[0] ?? null;
 }
 
@@ -61,6 +62,31 @@ export function buildLinearTaskText(entry: SummaryLogEntry) {
   }
 
   return "Linear update";
+}
+
+export function extractTicketIdentifier(...values: Array<string | null | undefined>) {
+  for (const value of values) {
+    const match = value?.match(TICKET_IDENTIFIER_PATTERN);
+    if (match?.[0]) {
+      return match[0];
+    }
+  }
+
+  return null;
+}
+
+export function normalizeTicketTitle(identifier: string, rawTitle?: string | null) {
+  const trimmed = rawTitle?.trim() ?? "";
+  if (!trimmed) {
+    return identifier;
+  }
+
+  const withoutIdentifier = trimmed.replace(new RegExp(`^${identifier}\\s*[:\\-]?\\s*`, "i"), "").trim();
+  if (!withoutIdentifier) {
+    return identifier;
+  }
+
+  return `${identifier} - ${withoutIdentifier}`;
 }
 
 export function looksInProgress(text: string) {
@@ -160,6 +186,8 @@ export function buildCommitPromptItems(commitDetails: GithubCommitDetail[]): Com
     .slice()
     .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
     .map((commit) => ({
+      repo: commit.repo,
+      ticket: extractTicketIdentifier(commit.message),
       commit_message: commit.message,
       authors: commit.authors,
       commit_id: commit.sha,
@@ -195,6 +223,8 @@ export function buildTaskItems(entries: SummaryLogEntry[]) {
 
     seen.add(key);
     tasks.push({
+      repo: entry.project?.githubRepo ?? null,
+      ticket: extractTicketIdentifier(entry.title ?? null, entry.content, task),
       task,
       status_hint: getTaskStatusHint(entry, task),
       source:
