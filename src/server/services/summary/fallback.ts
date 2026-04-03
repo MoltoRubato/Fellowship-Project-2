@@ -231,7 +231,7 @@ function findBestRepoGroupKey(
     }
   }
 
-  if (!bestKey || bestScore < 0.4) {
+  if (!bestKey || bestScore < 0.28) {
     return null;
   }
 
@@ -263,11 +263,14 @@ function normalizeUnticketedGithubText(text: string, repo?: string | null) {
   return truncateLine(`[${repo}] ${text}`);
 }
 
-function buildFallbackItem(entry: SummaryLogEntry, hasMultipleRepos: boolean) {
+function buildFallbackItem(entry: SummaryLogEntry, options: {
+  hasMultipleRepos: boolean;
+  includeRepoPrefix: boolean;
+}) {
   const ticket = extractTicketIdentifier(entry.title ?? null, entry.content);
   const ref = getEntrySourceRef(entry);
   const repo = entry.project?.githubRepo ?? null;
-  const repoPrefixNeeded = hasMultipleRepos && !ticket;
+  const repoPrefixNeeded = options.hasMultipleRepos && options.includeRepoPrefix && !ticket;
   let text = "";
 
   if (entry.source === EntrySource.github_commit) {
@@ -531,14 +534,20 @@ export function buildFallbackSummary(input: {
         title: seed?.title ?? "Other",
         titleRef: seed?.titleRef ?? null,
         titleUrl: seed?.titleUrl ?? null,
-        items: [buildFallbackItem(entry, hasMultipleRepos)],
+        items: [buildFallbackItem(entry, {
+          hasMultipleRepos,
+          includeRepoPrefix: key === "other",
+        })],
         sortAt: entry.createdAt.getTime(),
         titlePriority: seed?.titlePriority ?? 0,
       });
       continue;
     }
 
-    existing.items.push(buildFallbackItem(entry, hasMultipleRepos));
+    existing.items.push(buildFallbackItem(entry, {
+      hasMultipleRepos,
+      includeRepoPrefix: key === "other",
+    }));
     existing.sortAt = Math.min(existing.sortAt, entry.createdAt.getTime());
 
     if (seed && seed.titlePriority > existing.titlePriority) {
