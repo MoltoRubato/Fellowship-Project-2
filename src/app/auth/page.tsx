@@ -308,13 +308,18 @@ export default function AuthPage() {
               isInitialDashboardLoad ? (
                 <div aria-hidden="true" className={loadingActionClass} />
               ) : dashboard?.github.connected ? (
-                <button
-                  className={dangerButtonClass}
-                  disabled={busyAction === "disconnect:github"}
-                  onClick={() => disconnect("github")}
-                >
-                  Disconnect
-                </button>
+                <div className="flex items-center gap-2">
+                  <a className={primaryButtonClass} href="/api/oauth/github?reauth=1">
+                    Re-authorize
+                  </a>
+                  <button
+                    className={dangerButtonClass}
+                    disabled={busyAction === "disconnect:github"}
+                    onClick={() => disconnect("github")}
+                  >
+                    Disconnect
+                  </button>
+                </div>
               ) : (
                 <a className={primaryButtonClass} href="/api/oauth/github">
                   Connect GitHub

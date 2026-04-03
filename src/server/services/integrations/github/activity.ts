@@ -378,15 +378,26 @@ export async function getGithubConnectionSnapshot(userId: string): Promise<Githu
     };
   }
 
-  const { repos, scopes, username } = await loadGithubReposFromAccount(account);
+  try {
+    const { repos, scopes, username } = await loadGithubReposFromAccount(account);
 
-  return {
-    connected: true,
-    username,
-    scopes,
-    permissionWarning: buildPermissionWarning(scopes),
-    repos,
-  };
+    return {
+      connected: true,
+      username,
+      scopes,
+      permissionWarning: buildPermissionWarning(scopes),
+      repos,
+    };
+  } catch {
+    // Token was revoked or is otherwise invalid — treat as disconnected
+    return {
+      connected: false,
+      username: account.username,
+      scopes: [],
+      permissionWarning: null,
+      repos: [],
+    };
+  }
 }
 
 export async function fetchGithubActivity(
