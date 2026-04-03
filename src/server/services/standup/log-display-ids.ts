@@ -57,6 +57,25 @@ export async function reserveNextLogDisplayIdTx(
   return reserveNextDailyLogDisplayIdTx(tx, userId, dateKey);
 }
 
+export async function reserveNextImportedLogDisplayIdTx(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  dateKey: string,
+) {
+  const importedEntries = await tx.logEntry.aggregate({
+    where: {
+      userId,
+      displayDateKey: dateKey,
+      displayId: { lt: 1 },
+    },
+    _min: {
+      displayId: true,
+    },
+  });
+
+  return Math.min(importedEntries._min.displayId ?? 0, 0) - 1;
+}
+
 export async function realignNextLogDisplayIdTx(
   tx: Prisma.TransactionClient,
   input: {

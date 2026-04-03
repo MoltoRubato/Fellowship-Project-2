@@ -1,9 +1,9 @@
 import type { App } from "@slack/bolt";
-import type { SummaryPeriod } from "../types.js";
+import type { SummaryPeriod } from "../types";
 import {
   postToResponseUrl,
   sendModalConfirmation,
-} from "../shared/index.js";
+} from "../shared";
 import {
   createCompletedSummarySession,
 } from "@/server/services/summarySessions";

@@ -17,7 +17,7 @@ It lets each engineer:
 - Tailwind CSS
 - tRPC
 - Prisma + PostgreSQL
-- Slack Bolt (Socket Mode)
+- Slack HTTP endpoints in Next.js, with optional Socket Mode for local testing
 - GitHub OAuth
 - Linear OAuth
 - Gemini for summary generation
@@ -26,7 +26,11 @@ It lets each engineer:
 
 ### 1. Slack commands
 
-The bot registers these commands in code:
+The production bot receives slash commands and interactive payloads through:
+
+- `/api/slack`
+
+The command set is:
 
 - `/auth`
 - `/did`
@@ -38,6 +42,7 @@ The bot registers these commands in code:
 
 Important:
 - Slack slash commands still need to be created in the Slack app dashboard.
+- Point command Request URLs and the Interactivity endpoint at `/api/slack`.
 - This repo does not currently include a Slack manifest file.
 
 ### 2. Auth dashboard
@@ -82,16 +87,35 @@ Users can control:
 - selected weekdays
 - morning and/or end-of-day reminders
 
+## Runtime Model
+
+Production no longer depends on a singleton cron worker.
+
+- Slack traffic is handled by the Next.js app over HTTP.
+- GitHub and Linear can push activity into the app through verified webhook routes.
+- Scheduled work runs through stateless HTTP endpoints protected by `CRON_SECRET`.
+- Durable job leases in Postgres prevent overlapping runs when multiple instances are live.
+- Reminder sends are deduped in the database instead of in process memory.
+
+Primary operational endpoints:
+
+- Slack commands and interactions: `/api/slack`
+- GitHub webhook: `/api/webhooks/github`
+- Linear webhook: `/api/webhooks/linear`
+- Activity sweep fallback: `/api/scheduled/activity-sync`
+- Reminder dispatch: `/api/scheduled/reminders`
+- Retention cleanup: `/api/scheduled/retention`
+
 ## Project Structure
 
 ```text
 src/
   app/                   Next.js app router pages and API routes
-  bot/                   Slack bot entry point, commands, reminders, scheduled jobs
+  bot/                   Shared Slack command handlers plus optional Socket Mode entry point
   lib/                   Shared helpers for reminders, local time, summary placeholders
   server/
     api/                 tRPC routers
-    services/            business logic for auth, standup logging, summaries, integrations
+    services/            business logic for auth, standup logging, summaries, jobs, integrations
 prisma/
   schema.prisma          database schema
 scripts/
@@ -147,10 +171,16 @@ Push schema to your local database:
 npx prisma db push
 ```
 
-Run web app + bot together:
+Run the web app:
 
 ```bash
 npm run dev
+```
+
+Run web app + optional Socket Mode bot together:
+
+```bash
+npm run dev:socket
 ```
 
 Run only the web app:
@@ -159,7 +189,7 @@ Run only the web app:
 npm run dev:web
 ```
 
-Run only the bot:
+Run only the optional Socket Mode bot:
 
 ```bash
 npm run dev:bot
@@ -198,7 +228,15 @@ Production start command:
 npm run start
 ```
 
+Run the full test suite:
+
+```bash
+npm test
+```
+
 ## Deploying To Railway
+
+The Railway service only needs to run the web app. Cron and webhook traffic should target the HTTP routes above.
 
 Typical deploy flow:
 
@@ -228,8 +266,10 @@ railway up
 
 ## Operational Notes
 
-- The bot uses Slack Socket Mode in [src/bot/index.ts](/Users/ryan/Desktop/Fellowship-Project-2/src/bot/index.ts).
+- Socket Mode in [src/bot/index.ts](/Users/ryan/Desktop/Fellowship-Project-2/src/bot/index.ts) is now optional and mainly useful for local testing.
 - Reminder sends use each Slack user’s timezone instead of a hardcoded team timezone.
+- External activity is webhook-first, with scheduled sync still available as a safety net.
+- Data retention is no longer open-ended: expired auth tokens, stale summary sessions, aged reminder deliveries, and old log rows are purged on a schedule.
 - Plain DMs are ignored; the bot only acts on commands and interactive flows.
 - Summary links are normalized into a single clickable Slack `Link` suffix.
 - Placeholder metric values are blocked from leaking into final summaries.

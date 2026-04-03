@@ -1,4 +1,4 @@
-import type { EntryModalItem } from "../types.js";
+import type { EntryModalItem } from "../types";
 import { ENTRY_MODAL_METADATA_MAX_CHARS } from "./constants";
 
 export function truncatePlainText(text: string, max = 75) {

@@ -1,7 +1,7 @@
-import type { SummaryPeriod } from "../types.js";
+import type { SummaryPeriod } from "../types";
 import {
   sortRepoNamesForRepoPicker,
-} from "../shared/index.js";
+} from "../shared";
 import {
   listEntriesForSummaryPeriod,
   type UserContext,

@@ -1,5 +1,5 @@
 import type { KnownBlock, Block } from "@slack/types";
-import type { CommandModule, CommandArgs, ViewArgs, ActionArgs, EntryModalItem } from "./types.js";
+import type { CommandModule, CommandArgs, ViewArgs, ActionArgs, EntryModalItem } from "./types";
 import {
   EDIT_MODAL_CALLBACK_ID,
   DELETE_MODAL_CALLBACK_ID,
@@ -20,7 +20,7 @@ import {
   resolveEditTextFromModal,
   resolveDefaultRepo,
   sendModalConfirmation,
-} from "./shared/index.js";
+} from "./shared";
 import {
   editManualEntryById,
   deleteManualEntryById,
@@ -119,7 +119,7 @@ function buildEntryManagementModalView(input: {
   };
 }
 
-async function openEditModal(args: CommandArgs) {
+export async function handleEditCommand(args: CommandArgs) {
   const { command, ack, client, respond } = args;
   await ack();
 
@@ -152,7 +152,7 @@ async function openEditModal(args: CommandArgs) {
   });
 }
 
-async function openDeleteModal(args: CommandArgs) {
+export async function handleDeleteCommand(args: CommandArgs) {
   const { command, ack, client, respond } = args;
   await ack();
 
@@ -184,7 +184,7 @@ async function openDeleteModal(args: CommandArgs) {
   });
 }
 
-async function handleEditModalSubmission(args: ViewArgs) {
+export async function handleEditModalSubmission(args: ViewArgs) {
   const { ack, body, client, view } = args;
   const content = resolveEditTextFromModal(view);
 
@@ -235,7 +235,7 @@ async function handleEditModalSubmission(args: ViewArgs) {
   );
 }
 
-async function handleDeleteModalSubmission(args: ViewArgs) {
+export async function handleDeleteModalSubmission(args: ViewArgs) {
   const { ack, body, client, view } = args;
   await ack();
 
@@ -272,7 +272,7 @@ async function handleDeleteModalSubmission(args: ViewArgs) {
   );
 }
 
-async function handleEntrySelectionChange(args: ActionArgs) {
+export async function handleEntrySelectionChange(args: ActionArgs) {
   const { ack, body, client } = args;
   await ack();
 
@@ -321,8 +321,8 @@ async function handleEntrySelectionChange(args: ActionArgs) {
 const manage: CommandModule = {
   name: "manage",
   register(app) {
-    app.command("/edit", async (args) => openEditModal(args));
-    app.command("/delete", async (args) => openDeleteModal(args));
+    app.command("/edit", handleEditCommand);
+    app.command("/delete", handleDeleteCommand);
 
     app.view(EDIT_MODAL_CALLBACK_ID, handleEditModalSubmission);
     app.view(DELETE_MODAL_CALLBACK_ID, handleDeleteModalSubmission);

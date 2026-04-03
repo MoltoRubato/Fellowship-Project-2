@@ -7,10 +7,18 @@ import { normalizeRepo, normalizeRepos } from "./repo";
 import type { LoggedEntryInput } from "./types";
 import { resolveProjectForUser, touchProject } from "./projects";
 import { ensureSlackUser, getUserContextBySlackId } from "./users";
-import { reserveNextLogDisplayIdTx, realignNextLogDisplayIdTx } from "./log-display-ids";
+import {
+  reserveNextImportedLogDisplayIdTx,
+  reserveNextLogDisplayIdTx,
+  realignNextLogDisplayIdTx,
+} from "./log-display-ids";
 
 async function getCurrentSlackDateKey(slackUserId: string) {
   return getSlackDateKey(slackUserId, new Date());
+}
+
+function isUserVisibleEntrySource(source: EntrySource) {
+  return source === EntrySource.manual || source === EntrySource.dm;
 }
 
 export async function createLogEntryForUser(
@@ -20,13 +28,14 @@ export async function createLogEntryForUser(
   const project = await resolveProjectForUser(user.id, input.repo);
   const projectId = project?.id ?? null;
   const displayDateKey = await getSlackDateKey(user.slackUserId, input.createdAt ?? new Date());
+  const source = input.source ?? EntrySource.manual;
   const entry = await db.$transaction(async (tx) => {
     if (input.externalId) {
       const existing = await tx.logEntry.findFirst({
         where: {
           userId: user.id,
           projectId,
-          source: input.source ?? EntrySource.manual,
+          source,
           externalId: input.externalId,
         },
       });
@@ -36,7 +45,9 @@ export async function createLogEntryForUser(
       }
     }
 
-    const displayId = await reserveNextLogDisplayIdTx(tx, user.id, displayDateKey);
+    const displayId = isUserVisibleEntrySource(source)
+      ? await reserveNextLogDisplayIdTx(tx, user.id, displayDateKey)
+      : await reserveNextImportedLogDisplayIdTx(tx, user.id, displayDateKey);
 
     return tx.logEntry.create({
       data: {
@@ -46,7 +57,7 @@ export async function createLogEntryForUser(
         projectId,
         content: input.content,
         entryType: input.entryType,
-        source: input.source ?? EntrySource.manual,
+        source,
         title: input.title ?? null,
         externalId: input.externalId ?? null,
         externalUrl: input.externalUrl ?? null,

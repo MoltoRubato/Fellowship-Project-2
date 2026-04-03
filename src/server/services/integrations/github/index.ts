@@ -9,3 +9,8 @@ export type {
 export { exchangeGithubCode, saveGithubAccount } from "./oauth";
 export { fetchGithubCommitDetails } from "./commits";
 export { getGithubConnectionSnapshot, fetchGithubActivity } from "./activity";
+export {
+  buildGithubWebhookItems,
+  handleGithubWebhook,
+  verifyGithubWebhookSignature,
+} from "./webhooks";

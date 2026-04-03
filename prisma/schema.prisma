@@ -32,6 +32,13 @@ enum SummarySessionStatus {
   expired
 }
 
+enum ScheduledJobStatus {
+  idle
+  running
+  completed
+  failed
+}
+
 model User {
   id               String    @id @default(cuid())
   slackUserId      String    @unique @map("slack_user_id")
@@ -46,6 +53,7 @@ model User {
   dailySequences DailySequence[]
   logEntries     LogEntry[]
   projects       Project[]  @relation("OwnedProjects")
+  reminderDeliveries ReminderDelivery[]
   summarySessions SummarySession[]
 
   @@map("users")
@@ -159,6 +167,36 @@ model SummarySession {
   @@index([userId, status, expiresAt])
   @@index([userId, projectId, updateNo])
   @@map("summary_sessions")
+}
+
+model ReminderDelivery {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  reminderKey     String   @map("reminder_key")
+  reminderDateKey String   @map("reminder_date_key")
+  sentAt          DateTime @default(now()) @map("sent_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, reminderKey, reminderDateKey])
+  @@index([sentAt])
+  @@map("reminder_deliveries")
+}
+
+model ScheduledJob {
+  jobKey          String             @id @map("job_key")
+  leaseToken      String?            @map("lease_token")
+  leaseExpiresAt  DateTime?          @map("lease_expires_at")
+  lastStartedAt   DateTime?          @map("last_started_at")
+  lastCompletedAt DateTime?          @map("last_completed_at")
+  lastStatus      ScheduledJobStatus @default(idle) @map("last_status")
+  lastError       String?            @map("last_error")
+  lastSummary     Json?              @map("last_summary")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@map("scheduled_jobs")
 }
 
 model LinkToken {

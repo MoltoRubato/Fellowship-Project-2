@@ -1,4 +1,4 @@
-import type { ViewArgs } from "../types.js";
+import type { ViewArgs } from "../types";
 import { normalizeRepo } from "@/server/services/standup";
 import {
   REPO_SELECT_BLOCK_ID,

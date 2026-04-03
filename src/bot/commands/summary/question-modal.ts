@@ -1,4 +1,4 @@
-import type { ActionArgs, ViewArgs } from "../types.js";
+import type { ActionArgs, ViewArgs } from "../types";
 
 const QUESTIONS_REMOVED_TEXT =
   "Clarifying questions have been removed. Please run `/summarise` again to get the summary directly.";

@@ -1,6 +1,6 @@
 import { EntrySource, EntryType } from "@prisma/client";
 import type { KnownBlock, Block } from "@slack/types";
-import type { CommandModule, CommandArgs, ViewArgs } from "./types.js";
+import type { CommandModule, CommandArgs, ViewArgs } from "./types";
 import {
   ENTRY_MODAL_CALLBACK_ID,
   REPO_SELECT_BLOCK_ID,
@@ -16,9 +16,9 @@ import {
   loadUserForEntryModal,
   maybeSendOnboardingLink,
   sendModalConfirmation,
-} from "./shared/index.js";
+} from "./shared";
 import { logEntry, getLastSelfActionedRepo } from "@/server/services/standup";
-import type { ModalEntryType } from "./types.js";
+import type { ModalEntryType } from "./types";
 
 async function openEntryModal(
   args: CommandArgs,
@@ -156,7 +156,7 @@ async function openEntryModal(
   await maybeSendOnboardingLink(command.user_id, command.team_id, created);
 }
 
-async function handleEntryModalSubmission(args: ViewArgs) {
+export async function handleEntryModalSubmission(args: ViewArgs) {
   const { ack, body, client, view } = args;
   const rawMessage =
     view.state.values[MESSAGE_BLOCK_ID]?.[MESSAGE_ACTION_ID] &&
@@ -206,28 +206,31 @@ async function handleEntryModalSubmission(args: ViewArgs) {
   );
 }
 
+export async function handleDidCommand(args: CommandArgs) {
+  await openEntryModal(args, {
+    entryType: "update",
+    title: "Log work update",
+    submitLabel: "Log update",
+    messageLabel: "What did you work on?",
+    messagePlaceholder: "Finished the auth callback flow and verified the dashboard.",
+  });
+}
+
+export async function handleBlockerCommand(args: CommandArgs) {
+  await openEntryModal(args, {
+    entryType: "blocker",
+    title: "Log blocker",
+    submitLabel: "Log blocker",
+    messageLabel: "What is blocking you?",
+    messagePlaceholder: "Waiting on GitHub OAuth callback URL to be updated.",
+  });
+}
+
 const entries: CommandModule = {
   name: "entries",
   register(app) {
-    app.command("/did", async (args) => {
-      await openEntryModal(args, {
-        entryType: "update",
-        title: "Log work update",
-        submitLabel: "Log update",
-        messageLabel: "What did you work on?",
-        messagePlaceholder: "Finished the auth callback flow and verified the dashboard.",
-      });
-    });
-
-    app.command("/blocker", async (args) => {
-      await openEntryModal(args, {
-        entryType: "blocker",
-        title: "Log blocker",
-        submitLabel: "Log blocker",
-        messageLabel: "What is blocking you?",
-        messagePlaceholder: "Waiting on GitHub OAuth callback URL to be updated.",
-      });
-    });
+    app.command("/did", handleDidCommand);
+    app.command("/blocker", handleBlockerCommand);
 
     app.view(ENTRY_MODAL_CALLBACK_ID, handleEntryModalSubmission);
   },

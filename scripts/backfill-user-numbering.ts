@@ -8,6 +8,8 @@ type DailySequenceSeed = {
   nextSummaryUpdateNo: number;
 };
 
+const TEMP_SEQUENCE_OFFSET = 1_000_000_000;
+
 function normalizeSequenceValue(value: number | bigint | null | undefined, fallback: number) {
   if (typeof value === "bigint") {
     return Number(value);
@@ -36,10 +38,21 @@ async function backfillLogEntryDisplayIds() {
     WITH ranked AS (
       SELECT
         id,
-        ROW_NUMBER() OVER (
-          PARTITION BY user_id, display_date_key
-          ORDER BY created_at ASC, display_id ASC, id ASC
-        ) AS next_display_id
+        CASE
+          WHEN deleted_at IS NULL AND source IN ('manual', 'dm')
+            THEN ${TEMP_SEQUENCE_OFFSET} + ROW_NUMBER() OVER (
+              PARTITION BY user_id, display_date_key, (deleted_at IS NULL AND source IN ('manual', 'dm'))
+              ORDER BY created_at ASC, ABS(display_id) ASC, id ASC
+            )
+          ELSE -(${TEMP_SEQUENCE_OFFSET} + ROW_NUMBER() OVER (
+            PARTITION BY user_id, display_date_key, (deleted_at IS NULL AND source IN ('manual', 'dm'))
+            ORDER BY
+              CASE WHEN deleted_at IS NULL THEN created_at ELSE updated_at END ASC,
+              created_at ASC,
+              ABS(display_id) ASC,
+              id ASC
+          ))
+        END AS next_display_id
       FROM log_entries
     )
     UPDATE log_entries AS entry
@@ -50,8 +63,12 @@ async function backfillLogEntryDisplayIds() {
 
   await db.$executeRawUnsafe(`
     UPDATE log_entries
-    SET display_id = ABS(display_id)
-    WHERE display_id < 0;
+    SET display_id = CASE
+      WHEN deleted_at IS NULL AND source IN ('manual', 'dm')
+        THEN ABS(display_id) - ${TEMP_SEQUENCE_OFFSET}
+      ELSE -1 * (ABS(display_id) - ${TEMP_SEQUENCE_OFFSET})
+    END
+    WHERE ABS(display_id) > ${TEMP_SEQUENCE_OFFSET};
   `);
 }
 
@@ -71,9 +88,9 @@ async function backfillSummaryUpdateNumbers() {
     WITH ranked AS (
       SELECT
         id,
-        ROW_NUMBER() OVER (
+        ${TEMP_SEQUENCE_OFFSET} + ROW_NUMBER() OVER (
           PARTITION BY user_id, update_date_key
-          ORDER BY created_at ASC, update_no ASC, id ASC
+          ORDER BY created_at ASC, ABS(update_no) ASC, id ASC
         ) AS next_update_no
       FROM summary_sessions
     )
@@ -85,8 +102,8 @@ async function backfillSummaryUpdateNumbers() {
 
   await db.$executeRawUnsafe(`
     UPDATE summary_sessions
-    SET update_no = ABS(update_no)
-    WHERE update_no < 0;
+    SET update_no = ABS(update_no) - ${TEMP_SEQUENCE_OFFSET}
+    WHERE ABS(update_no) > ${TEMP_SEQUENCE_OFFSET};
   `);
 }
 
@@ -107,6 +124,8 @@ async function rebuildDailySequences() {
         display_date_key AS date_key,
         MAX(display_id) + 1 AS next_log_display_id
       FROM log_entries
+      WHERE deleted_at IS NULL
+        AND source IN ('manual', 'dm')
       GROUP BY user_id, display_date_key
     ),
     summary_stats AS (

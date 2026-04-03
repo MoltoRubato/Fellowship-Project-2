@@ -1,4 +1,4 @@
-import type { CommandArgs, ViewArgs, ActionArgs, SummaryPeriod } from "../types.js";
+import type { CommandArgs, ViewArgs, ActionArgs, SummaryPeriod } from "../types";
 import {
   SUMMARY_MODAL_CALLBACK_ID,
   SUMMARY_REPO_PICK_ACTION_ID,
@@ -16,7 +16,7 @@ import {
   maybeSendOnboardingLink,
   postToResponseUrl,
   sendModalConfirmation,
-} from "../shared/index.js";
+} from "../shared";
 import {
   getSummarySyncSince,
 } from "@/server/services/summary";

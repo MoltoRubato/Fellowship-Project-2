@@ -1,4 +1,4 @@
-import type { SummaryPeriod } from "../types.js";
+import type { SummaryPeriod } from "../types";
 import type { SummaryAnswer } from "@/server/services/summary";
 import {
   generateStandupSummary,

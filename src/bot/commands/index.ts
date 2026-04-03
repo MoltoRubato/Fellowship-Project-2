@@ -1,10 +1,10 @@
 import type { App } from "@slack/bolt";
-import type { CommandModule } from "./types.js";
-import entries from "./entries.js";
-import manage from "./manage.js";
-import summary from "./summary/index.js";
-import auth from "./auth.js";
-import reminders from "./reminders/index.js";
+import type { CommandModule } from "./types";
+import entries from "./entries";
+import manage from "./manage";
+import summary from "./summary";
+import auth from "./auth";
+import reminders from "./reminders";
 
 const modules: CommandModule[] = [entries, manage, summary, auth, reminders];
 
@@ -14,4 +14,4 @@ export function registerAllCommands(app: App) {
   }
 }
 
-export type { CommandModule } from "./types.js";
+export type { CommandModule } from "./types";

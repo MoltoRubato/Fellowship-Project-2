@@ -1,10 +1,10 @@
-import type { CommandModule } from "../types.js";
+import type { CommandModule } from "../types";
 import {
   SUMMARY_MODAL_CALLBACK_ID,
   SUMMARY_REPO_PICK_ACTION_ID,
   SUMMARY_QUESTIONS_MODAL_CALLBACK_ID,
   SUMMARY_QUESTIONS_ACTION_ID,
-} from "../shared/index.js";
+} from "../shared";
 import { handleSummarise, handleSummaryRepoPick, handleSummaryModalSubmission } from "./handlers";
 import { handleSummaryQuestionsOpen, handleSummaryQuestionsSubmit } from "./question-modal";
 

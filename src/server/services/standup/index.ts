@@ -25,3 +25,4 @@ export {
   getLastSelfActionedRepo,
 } from "./entries";
 export { syncConnectedActivity } from "./activity-sync";
+export { runActivitySyncSweep } from "./activity-sweep";
