@@ -315,6 +315,23 @@ function renderSectionTitle(text: string) {
   return `*${escapeSlackText(text)}*`;
 }
 
+function buildCompactHeading(
+  title: string,
+  primaryLink: ResolvedGroupLink | null,
+  secondaryLink: ResolvedGroupLink | null,
+) {
+  const headingCore =
+    primaryLink && !hasExistingLink(title)
+      ? `*<${primaryLink.url}|${escapeSlackLinkText(title)}>*`
+      : renderSectionTitle(title);
+
+  if (!secondaryLink) {
+    return headingCore;
+  }
+
+  return `${headingCore} · <${secondaryLink.url}|${getSecondaryLinkLabel(secondaryLink)}>`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -425,6 +442,43 @@ function joinNaturalLanguage(parts: string[]) {
 
 function trimTrailingPeriod(value: string) {
   return value.replace(/\.+$/g, "").trim();
+}
+
+function looksLikeSameHeadingTitle(left: string, right: string) {
+  const normalizedLeft = trimTrailingPeriod(normalizeText(left));
+  const normalizedRight = trimTrailingPeriod(normalizeText(right));
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+
+  return (
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+  );
+}
+
+function compressRenderedItemText(text: string, groupTitle: string) {
+  const prPrefixMatch = text.match(/^PR\s+(.+?):\s+(.+)$/i);
+  if (prPrefixMatch?.[1] && prPrefixMatch[2]) {
+    const action = prPrefixMatch[1].trim();
+    const title = prPrefixMatch[2].trim();
+    if (looksLikeSameHeadingTitle(stripTicketPrefix(title, extractTicketIdentifier(title, groupTitle)), groupTitle)) {
+      return `${action.charAt(0).toUpperCase() + action.slice(1).toLowerCase()} PR`;
+    }
+  }
+
+  const prSuffixMatch = text.match(/^(.+?)\s+PR:\s+(.+)$/i);
+  if (prSuffixMatch?.[1] && prSuffixMatch[2]) {
+    const action = prSuffixMatch[1].trim();
+    const title = prSuffixMatch[2].trim();
+    if (looksLikeSameHeadingTitle(stripTicketPrefix(title, extractTicketIdentifier(title, groupTitle)), groupTitle)) {
+      return `${action.charAt(0).toUpperCase() + action.slice(1).toLowerCase()} PR`;
+    }
+  }
+
+  return text;
 }
 
 function formatTitleList(titles: string[], limit = 3) {
@@ -1044,30 +1098,6 @@ function getSecondaryLinkLabel(link: ResolvedGroupLink) {
   return "Link";
 }
 
-function getPrimaryLinkLabel(link: ResolvedGroupLink) {
-  if (link.source === EntrySource.linear_issue) {
-    return "Linear";
-  }
-
-  if (link.source === EntrySource.github_pr) {
-    return "PR";
-  }
-
-  if (link.source === EntrySource.github_commit) {
-    return "Commit";
-  }
-
-  if (link.source === "compare") {
-    return "Compare";
-  }
-
-  return "Link";
-}
-
-function formatVisibleLinkLine(label: string, url: string) {
-  return `- ${label}: ${url}`;
-}
-
 export function isStructuredTicketSummary(summary: string) {
   const lines = summary
     .split("\n")
@@ -1159,7 +1189,7 @@ export function renderSummaryForSlack(summary: string, entries: SummaryLogEntry[
   output.push(...structure.header);
 
   if (statusSnapshotLines.length) {
-    output.push("", renderSectionTitle("Status snapshot"));
+    output.push(renderSectionTitle("Status snapshot"));
     for (const line of statusSnapshotLines) {
       output.push(`- ${line}`);
     }
@@ -1181,26 +1211,18 @@ export function renderSummaryForSlack(summary: string, entries: SummaryLogEntry[
       matchedEntries.forEach((entry) => assignedEntryIds.add(entry.id));
     }
 
-    output.push("", renderSectionTitle(group.title));
+    output.push(buildCompactHeading(group.title, primaryLink, secondaryLink));
 
     for (const item of visibleItems) {
-      output.push(`- ${item}`);
-    }
-
-    if (primaryLink) {
-      output.push(formatVisibleLinkLine(getPrimaryLinkLabel(primaryLink), primaryLink.url));
-    }
-
-    if (secondaryLink) {
-      output.push(formatVisibleLinkLine(getSecondaryLinkLabel(secondaryLink), secondaryLink.url));
+      output.push(`- ${compressRenderedItemText(item, group.title)}`);
     }
   }
 
   if (needsReviewItems.length) {
-    output.push("", renderSectionTitle("Needs review"));
+    output.push(renderSectionTitle("Needs review"));
     for (const line of needsReviewItems) {
       if (line.url) {
-        output.push(`- ${line.text}: ${line.url}`);
+        output.push(`- <${line.url}|${escapeSlackLinkText(line.text)}>`);
       } else {
         output.push(`- ${line.text}`);
       }
@@ -1208,7 +1230,7 @@ export function renderSummaryForSlack(summary: string, entries: SummaryLogEntry[
   }
 
   if (structure.blockers.length) {
-    output.push("", renderSectionTitle("Blockers"));
+    output.push(renderSectionTitle("Blockers"));
     for (const line of structure.blockers) {
       output.push(`- ${line}`);
     }

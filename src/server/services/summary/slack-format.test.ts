@@ -53,7 +53,7 @@ test("isStructuredTicketSummary validates the new grouped format", () => {
   assert.equal(isStructuredTicketSummary("Update #1\nToday's work:\n- Something"), false);
 });
 
-test("renderSummaryForSlack links ticket titles to Linear and uses one PR footer link", () => {
+test("renderSummaryForSlack embeds group links in the heading", () => {
   const entries: SummaryLogEntry[] = [
     makeEntry({
       id: "linear-1",
@@ -103,12 +103,12 @@ test("renderSummaryForSlack links ticket titles to Linear and uses one PR footer
   );
   assert.match(
     rendered,
-    /\*RM-15476 - MCP Dropdown Reliability\*/,
+    /\*<https:\/\/linear\.app\/readme\/issue\/RM-15476\|RM-15476 - MCP Dropdown Reliability>\* · <https:\/\/github\.com\/readmeio\/readme\/pull\/17883\|PR>/,
   );
   assert.match(rendered, /- Reviewed and approved the MCP revamp PR\./);
-  assert.match(rendered, /- Linear: https:\/\/linear\.app\/readme\/issue\/RM-15476/);
-  assert.match(rendered, /- PR: https:\/\/github\.com\/readmeio\/readme\/pull\/17883/);
   assert.doesNotMatch(rendered, /https:\/\/github\.com\/readmeio\/readme\/commit\//);
+  assert.doesNotMatch(rendered, /- Linear:/);
+  assert.doesNotMatch(rendered, /- PR:/);
   assert.match(rendered, /\*Other\*/);
   assert.doesNotMatch(rendered, /Next up:/);
 });
@@ -147,13 +147,13 @@ test("renderSummaryForSlack uses a single compare footer link for commit-only wo
   );
 
   assert.match(rendered, /\*Status snapshot\*/);
-  assert.match(rendered, /\*LYR-8 Create new repo for Snake game webapp\*/);
-  assert.match(rendered, /- Added HTML structure and CSS styling\./);
-  assert.match(rendered, /- Added core snake game logic with rendering\./);
   assert.match(
     rendered,
-    /- Compare: https:\/\/github\.com\/readmeio\/readme\/compare\/abcdef1234567\.\.fedcba7654321/,
+    /\*LYR-8 Create new repo for Snake game webapp\* · <https:\/\/github\.com\/readmeio\/readme\/compare\/abcdef1234567\.\.fedcba7654321\|Compare>/,
   );
+  assert.match(rendered, /- Added HTML structure and CSS styling\./);
+  assert.match(rendered, /- Added core snake game logic with rendering\./);
+  assert.doesNotMatch(rendered, /- Compare:/);
   assert.doesNotMatch(rendered, /\|commit>/);
 });
 
@@ -188,13 +188,13 @@ test("renderSummaryForSlack backfills nested bullets when a ticket heading is em
     entries,
   );
 
-  assert.match(rendered, /\*LYR-9 PlayTest snake game\*/);
-  assert.match(rendered, /- Add mobile touch controls and responsive layout/);
-  assert.match(rendered, /- Add pause functionality and sound effects/);
   assert.match(
     rendered,
-    /- Compare: https:\/\/github\.com\/readmeio\/readme\/compare\/1111111111111\.\.2222222222222/,
+    /\*LYR-9 PlayTest snake game\* · <https:\/\/github\.com\/readmeio\/readme\/compare\/1111111111111\.\.2222222222222\|Compare>/,
   );
+  assert.match(rendered, /- Add mobile touch controls and responsive layout/);
+  assert.match(rendered, /- Add pause functionality and sound effects/);
+  assert.doesNotMatch(rendered, /- Compare:/);
 });
 
 test("renderSummaryForSlack does not repeat a PR link under a PR-linked title", () => {
@@ -230,11 +230,11 @@ test("renderSummaryForSlack does not repeat a PR link under a PR-linked title", 
 
   assert.match(
     rendered,
-    /\*GitHub PR: Add game switcher and Tetris game\*/,
+    /\*<https:\/\/github\.com\/readmeio\/readme\/pull\/20001\|GitHub PR: Add game switcher and Tetris game>\*/,
   );
   assert.match(rendered, /- Refactor into game-switcher architecture with tab navigation\./);
   assert.doesNotMatch(rendered, /- Compare:/);
-  assert.match(rendered, /- PR: https:\/\/github\.com\/readmeio\/readme\/pull\/20001/);
+  assert.doesNotMatch(rendered, /- PR:/);
 });
 
 test("renderSummaryForSlack limits Other to five visible updates", () => {
@@ -299,8 +299,35 @@ test("renderSummaryForSlack renders a needs review section for open PRs", () => 
   assert.match(rendered, /\*Needs review\*/);
   assert.match(
     rendered,
-    /- RM-200 - Fix review callout: https:\/\/github\.com\/readmeio\/readme\/pull\/200/,
+    /- <https:\/\/github\.com\/readmeio\/readme\/pull\/200\|RM-200 - Fix review callout>/,
   );
+});
+
+test("renderSummaryForSlack compresses a redundant PR status bullet", () => {
+  const entries: SummaryLogEntry[] = [
+    makeEntry({
+      id: "pr-1",
+      source: EntrySource.github_pr,
+      title: "Add 3D FPS shooter game with Three.js",
+      content: "PR merged in readmeio/readme: Add 3D FPS shooter game with Three.js",
+      externalId: "github-pr:readmeio/readme:3:merged:2026-04-02T11:00:00.000Z",
+      externalUrl: "https://github.com/readmeio/readme/pull/3",
+      createdAt: new Date("2026-04-02T11:00:00.000Z"),
+    }),
+  ];
+
+  const rendered = renderSummaryForSlack(
+    [
+      "Daily update :male-technologist::",
+      "",
+      "## Add 3D FPS shooter game with Three.js [ref:pr_3]",
+      "- PR merged: Add 3D FPS shooter game with Three.js [ref:pr_3]",
+    ].join("\n"),
+    entries,
+  );
+
+  assert.match(rendered, /- Merged PR/);
+  assert.doesNotMatch(rendered, /- PR merged: Add 3D FPS shooter game with Three\.js/);
 });
 
 test("renderSummaryForSlack does not add needs review for open PRs without a review request", () => {
