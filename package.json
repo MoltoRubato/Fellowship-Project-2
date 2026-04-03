@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "dev:socket": "concurrently --names web,bot --prefix-colors cyan,yellow \"next dev\" \"tsx watch src/bot/index.ts\"",
+    "dev": "concurrently --names web,bot --prefix-colors cyan,yellow \"next dev\" \"tsx watch src/bot/index.ts\"",
     "dev:web": "next dev",
     "dev:bot": "tsx watch src/bot/index.ts",
     "build": "next build",
