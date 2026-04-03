@@ -49,7 +49,7 @@ interface ProjectRoutingProps {
 }
 
 export function ProjectRoutingSection(props: ProjectRoutingProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [sort, setSort] = useState<ProjectSort>("recent");
 
@@ -196,7 +196,7 @@ export function ProjectRoutingSection(props: ProjectRoutingProps) {
                       </div>
 
                       <div className="text-sm text-[var(--muted)]">
-                        {project.linearProjectName ?? "Not mapped"}
+                        {project.linearProjectName ?? "No integrations"}
                       </div>
 
                       <button
