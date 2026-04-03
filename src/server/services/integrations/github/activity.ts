@@ -1,6 +1,11 @@
 import { type Account } from "@prisma/client";
 import { decrypt } from "@/lib/crypto";
-import type { GithubActivityItem, GithubVisibleRepo, GithubConnectionSnapshot } from "./types";
+import type {
+  GithubActivityItem,
+  GithubVisibleRepo,
+  GithubConnectionSnapshot,
+  GithubPullRequestMetadata,
+} from "./types";
 import { createGithubClient, parseScopeHeader, buildPermissionWarning, getGithubAccount } from "./client";
 import { normalizeRepos } from "@/server/services/standup/repo";
 
@@ -24,6 +29,37 @@ export function buildPullRequestContent(repo: string, title: string, status: "me
   }
 
   return `PR updated in ${repo}: ${title}`;
+}
+
+function buildPullRequestMetadata(input: {
+  pullNumber: number;
+  mergedAt?: string | null;
+  state?: string | null;
+  draft?: boolean | null;
+  requestedReviewers?: Array<unknown> | null;
+  requestedTeams?: Array<unknown> | null;
+}): { githubPr: GithubPullRequestMetadata } {
+  const state = input.mergedAt
+    ? "closed"
+    : input.state === "closed"
+      ? "closed"
+      : "open";
+  const draft = Boolean(input.draft);
+  const requestedReviewerCount = input.requestedReviewers?.length ?? 0;
+  const requestedTeamCount = input.requestedTeams?.length ?? 0;
+  const reviewRequested = requestedReviewerCount + requestedTeamCount > 0;
+
+  return {
+    githubPr: {
+      number: input.pullNumber,
+      state,
+      draft,
+      awaitingReview: state === "open" && !draft && reviewRequested,
+      reviewRequested,
+      requestedReviewerCount,
+      requestedTeamCount,
+    },
+  };
 }
 
 export function getPullRequestStatus(input: {
@@ -269,6 +305,9 @@ async function loadRecentPullRequestActivity(account: Account, since: Date, repo
       let closedAt: string | null = item.closed_at ?? null;
       let updatedAt: string | null = item.updated_at ?? null;
       let state = item.state ?? null;
+      let draft = false;
+      let requestedReviewers: Array<unknown> = [];
+      let requestedTeams: Array<unknown> = [];
 
       try {
         const [owner, repoName] = repo.split("/");
@@ -281,6 +320,9 @@ async function loadRecentPullRequestActivity(account: Account, since: Date, repo
         closedAt = pull.data.closed_at ?? closedAt;
         updatedAt = pull.data.updated_at ?? updatedAt;
         state = pull.data.state ?? state;
+        draft = Boolean(pull.data.draft);
+        requestedReviewers = pull.data.requested_reviewers ?? [];
+        requestedTeams = pull.data.requested_teams ?? [];
       } catch {
         // Fall back to the search result when the detailed pull request fetch fails.
       }
@@ -308,6 +350,14 @@ async function loadRecentPullRequestActivity(account: Account, since: Date, repo
           statusInfo.createdAt.toISOString(),
         ),
         externalUrl: htmlUrl,
+        metadata: buildPullRequestMetadata({
+          pullNumber,
+          mergedAt,
+          state,
+          draft,
+          requestedReviewers,
+          requestedTeams,
+        }),
         createdAt: statusInfo.createdAt,
       });
     }

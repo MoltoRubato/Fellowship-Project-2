@@ -29,8 +29,30 @@ type FallbackGroup = {
   sortAt: number;
 };
 
+type GroupSeed = {
+  key: string;
+  title: string;
+  titleRef: string | null;
+  titleUrl: string | null;
+  titlePriority: number;
+};
+
 const LINEAR_COMPLETED_STATE_PATTERN = /\bmoved to (done|completed|closed|canceled|cancelled)\b/i;
 const LINEAR_IN_PROGRESS_STATE_PATTERN = /\bmoved to (in progress|doing|in review|review|backlog|todo|planned)\b/i;
+const GROUP_MATCH_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "for",
+  "from",
+  "in",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with",
+]);
 
 function getSummaryHeader(period: SummaryPeriod) {
   return period === "week" ? "Weekly update :male-technologist::" : "Daily update :male-technologist::";
@@ -58,6 +80,166 @@ function normalizeGithubPrDetail(entry: SummaryLogEntry) {
   }
 
   return truncateLine(entry.title ?? entry.content);
+}
+
+function buildUnticketedGithubPrTitle(entry: SummaryLogEntry) {
+  const contentMatch = entry.content.match(/^PR\s+.+?\s+in\s+[^:]+:\s*(.+)$/i);
+  return truncateLine(contentMatch?.[1]?.trim() || entry.title || entry.content);
+}
+
+function buildUnticketedLinearTitle(entry: SummaryLogEntry) {
+  const title = entry.title?.trim();
+  if (title) {
+    return truncateLine(title);
+  }
+
+  const taskText = buildLinearTaskText(entry).replace(/^Linear:\s*/i, "").trim();
+  return truncateLine(taskText || entry.content);
+}
+
+function normalizeMatchText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[`*_~[\]()]/g, " ")
+    .replace(/[^a-z0-9\s/-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function singularizeToken(token: string) {
+  if (token.endsWith("ies") && token.length > 4) {
+    return `${token.slice(0, -3)}y`;
+  }
+
+  if (token.endsWith("ing") && token.length > 5) {
+    return token.slice(0, -3);
+  }
+
+  if (token.endsWith("ed") && token.length > 4) {
+    return token.slice(0, -2);
+  }
+
+  if (token.endsWith("es") && token.length > 4) {
+    return token.slice(0, -2);
+  }
+
+  if (token.endsWith("s") && token.length > 3) {
+    return token.slice(0, -1);
+  }
+
+  return token;
+}
+
+function tokenizeMatchText(value: string) {
+  return normalizeMatchText(value)
+    .split(" ")
+    .map((token) => singularizeToken(token))
+    .filter((token) => token.length >= 2 && !GROUP_MATCH_STOP_WORDS.has(token));
+}
+
+function scoreTitleSimilarity(left: string, right: string) {
+  const normalizedLeft = normalizeMatchText(left);
+  const normalizedRight = normalizeMatchText(right);
+
+  if (!normalizedLeft || !normalizedRight) {
+    return 0;
+  }
+
+  if (normalizedLeft === normalizedRight) {
+    return 1;
+  }
+
+  if (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft)) {
+    return 0.9;
+  }
+
+  const leftTokens = new Set(tokenizeMatchText(left));
+  const rightTokens = new Set(tokenizeMatchText(right));
+
+  if (!leftTokens.size || !rightTokens.size) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  if (!overlap) {
+    return 0;
+  }
+
+  const coverage = overlap / rightTokens.size;
+  const precision = overlap / leftTokens.size;
+  return coverage * 0.75 + precision * 0.25;
+}
+
+function buildEntryMatchTexts(entry: SummaryLogEntry) {
+  if (entry.source === EntrySource.github_commit) {
+    const title = stripRepoPrefixedCommit(entry.title ?? entry.content);
+    return [title, entry.title ?? entry.content].filter(Boolean);
+  }
+
+  if (entry.source === EntrySource.github_pr) {
+    return [
+      buildUnticketedGithubPrTitle(entry),
+      normalizeGithubPrDetail(entry),
+      entry.title ?? entry.content,
+    ].filter(Boolean);
+  }
+
+  if (entry.source === EntrySource.linear_issue) {
+    return [
+      buildUnticketedLinearTitle(entry),
+      buildLinearTaskText(entry),
+      entry.content,
+    ].filter(Boolean);
+  }
+
+  return [entry.content].filter(Boolean);
+}
+
+function findBestRepoGroupKey(
+  entry: SummaryLogEntry,
+  candidateKeys: string[],
+  groups: Map<string, FallbackGroup & { titlePriority: number }>,
+) {
+  let bestKey: string | null = null;
+  let bestScore = 0;
+  let secondBestScore = 0;
+  const texts = buildEntryMatchTexts(entry);
+
+  for (const key of candidateKeys) {
+    const group = groups.get(key);
+    if (!group) {
+      continue;
+    }
+
+    const score = texts.reduce((maxScore, text) => Math.max(maxScore, scoreTitleSimilarity(text, group.title)), 0);
+    if (score > bestScore) {
+      secondBestScore = bestScore;
+      bestScore = score;
+      bestKey = key;
+      continue;
+    }
+
+    if (score > secondBestScore) {
+      secondBestScore = score;
+    }
+  }
+
+  if (!bestKey || bestScore < 0.4) {
+    return null;
+  }
+
+  if (bestScore - secondBestScore < 0.08 && bestScore < 0.85) {
+    return null;
+  }
+
+  return bestKey;
 }
 
 function normalizeLinearDetail(entry: SummaryLogEntry, ticket: string | null) {
@@ -148,6 +330,75 @@ function getTitlePriority(entry: SummaryLogEntry) {
   return 0;
 }
 
+function getGroupSeed(entry: SummaryLogEntry): GroupSeed | null {
+  const ticket = extractTicketIdentifier(entry.title ?? null, entry.content);
+  const titlePriority = getTitlePriority(entry);
+
+  if (ticket) {
+    return {
+      key: `ticket:${ticket}`,
+      title: pickGroupTitle(entry, ticket),
+      titleRef:
+        entry.source === EntrySource.linear_issue || entry.source === EntrySource.github_pr
+          ? getEntrySourceRef(entry)
+          : null,
+      titleUrl:
+        entry.source === EntrySource.linear_issue || entry.source === EntrySource.github_pr
+          ? (entry.externalUrl ?? null)
+          : null,
+      titlePriority,
+    };
+  }
+
+  if (entry.source === EntrySource.linear_issue) {
+    return {
+      key: `linear:${entry.externalId ?? entry.externalUrl ?? entry.title ?? entry.content}`,
+      title: buildUnticketedLinearTitle(entry),
+      titleRef: getEntrySourceRef(entry),
+      titleUrl: entry.externalUrl ?? null,
+      titlePriority,
+    };
+  }
+
+  if (entry.source === EntrySource.github_pr) {
+    return {
+      key: `pr:${entry.externalUrl ?? entry.externalId ?? entry.title ?? entry.content}`,
+      title: buildUnticketedGithubPrTitle(entry),
+      titleRef: getEntrySourceRef(entry),
+      titleUrl: entry.externalUrl ?? null,
+      titlePriority,
+    };
+  }
+
+  return null;
+}
+
+function getAssignedGroupKey(
+  entry: SummaryLogEntry,
+  repoGroupKeys: Map<string, Set<string>>,
+  groups: Map<string, FallbackGroup & { titlePriority: number }>,
+) {
+  const seed = getGroupSeed(entry);
+  if (seed) {
+    return seed.key;
+  }
+
+  const repo = entry.project?.githubRepo ?? null;
+  if (repo) {
+    const matchingKeys = [...(repoGroupKeys.get(repo) ?? new Set<string>())];
+    if (matchingKeys.length === 1) {
+      return matchingKeys[0] ?? "other";
+    }
+
+    const bestKey = findBestRepoGroupKey(entry, matchingKeys, groups);
+    if (bestKey) {
+      return bestKey;
+    }
+  }
+
+  return "other";
+}
+
 function dedupeGroupItems(items: FallbackItem[]) {
   const seen = new Set<string>();
 
@@ -162,12 +413,45 @@ function dedupeGroupItems(items: FallbackItem[]) {
   });
 }
 
-function formatBulletText(item: FallbackItem) {
-  if (!item.ref) {
+function capitalizeWord(value: string) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : value;
+}
+
+function compressDuplicatePrText(item: FallbackItem, groupTitle: string) {
+  if (item.source !== EntrySource.github_pr) {
     return item.text;
   }
 
-  return `${item.text} [ref:${item.ref}]`;
+  const match = item.text.match(/^PR\s+(.+?):\s+(.+)$/i);
+  if (!match) {
+    return item.text;
+  }
+
+  const [, action, rawTitle] = match;
+  const ticket = extractTicketIdentifier(groupTitle, rawTitle);
+  const normalizedTitle = normalizeMatchText(stripTicketPrefix(rawTitle, ticket));
+  const normalizedGroupTitle = normalizeMatchText(stripTicketPrefix(groupTitle, ticket));
+
+  if (
+    normalizedTitle &&
+    normalizedGroupTitle &&
+    (normalizedTitle === normalizedGroupTitle ||
+      normalizedTitle.includes(normalizedGroupTitle) ||
+      normalizedGroupTitle.includes(normalizedTitle))
+  ) {
+    return `${capitalizeWord(action)} PR`;
+  }
+
+  return item.text;
+}
+
+function formatBulletText(item: FallbackItem, groupTitle: string) {
+  const text = compressDuplicatePrText(item, groupTitle);
+  if (!item.ref) {
+    return text;
+  }
+
+  return `${text} [ref:${item.ref}]`;
 }
 
 export function buildFallbackSummary(input: {
@@ -194,31 +478,62 @@ export function buildFallbackSummary(input: {
       .filter((repo): repo is string => Boolean(repo)),
   ).size;
   const hasMultipleRepos = repoCount > 1;
+  const repoGroupKeys = new Map<string, Set<string>>();
 
   for (const entry of scopedEntries) {
-    const ticket = extractTicketIdentifier(entry.title ?? null, entry.content);
-    const key = ticket ? `ticket:${ticket}` : "other";
+    const seed = getGroupSeed(entry);
+    if (!seed) {
+      continue;
+    }
+
+    const existing = groups.get(seed.key);
+    const repo = entry.project?.githubRepo ?? null;
+
+    if (repo) {
+      const keys = repoGroupKeys.get(repo) ?? new Set<string>();
+      keys.add(seed.key);
+      repoGroupKeys.set(repo, keys);
+    }
+
+    if (!existing) {
+      groups.set(seed.key, {
+        key: seed.key,
+        title: seed.title,
+        titleRef: seed.titleRef,
+        titleUrl: seed.titleUrl,
+        items: [],
+        sortAt: entry.createdAt.getTime(),
+        titlePriority: seed.titlePriority,
+      });
+      continue;
+    }
+    existing.sortAt = Math.min(existing.sortAt, entry.createdAt.getTime());
+
+    if (seed.titlePriority > existing.titlePriority) {
+      existing.title = seed.title;
+      existing.titlePriority = seed.titlePriority;
+      existing.titleRef = seed.titleRef;
+      existing.titleUrl = seed.titleUrl;
+    } else if (!existing.titleRef && seed.titleRef) {
+      existing.titleRef = seed.titleRef;
+      existing.titleUrl = seed.titleUrl;
+    }
+  }
+
+  for (const entry of scopedEntries) {
+    const key = getAssignedGroupKey(entry, repoGroupKeys, groups);
     const existing = groups.get(key);
-    const title = pickGroupTitle(entry, ticket);
-    const titlePriority = getTitlePriority(entry);
-    const candidateTitleRef =
-      entry.source === EntrySource.linear_issue || entry.source === EntrySource.github_pr
-        ? getEntrySourceRef(entry)
-        : null;
-    const candidateTitleUrl =
-      entry.source === EntrySource.linear_issue || entry.source === EntrySource.github_pr
-        ? (entry.externalUrl ?? null)
-        : null;
+    const seed = getGroupSeed(entry);
 
     if (!existing) {
       groups.set(key, {
         key,
-        title,
-        titleRef: candidateTitleRef,
-        titleUrl: candidateTitleUrl,
+        title: seed?.title ?? "Other",
+        titleRef: seed?.titleRef ?? null,
+        titleUrl: seed?.titleUrl ?? null,
         items: [buildFallbackItem(entry, hasMultipleRepos)],
         sortAt: entry.createdAt.getTime(),
-        titlePriority,
+        titlePriority: seed?.titlePriority ?? 0,
       });
       continue;
     }
@@ -226,14 +541,14 @@ export function buildFallbackSummary(input: {
     existing.items.push(buildFallbackItem(entry, hasMultipleRepos));
     existing.sortAt = Math.min(existing.sortAt, entry.createdAt.getTime());
 
-    if (titlePriority > existing.titlePriority) {
-      existing.title = title;
-      existing.titlePriority = titlePriority;
-      existing.titleRef = candidateTitleRef;
-      existing.titleUrl = candidateTitleUrl;
-    } else if (!existing.titleRef && candidateTitleRef) {
-      existing.titleRef = candidateTitleRef;
-      existing.titleUrl = candidateTitleUrl;
+    if (seed && seed.titlePriority > existing.titlePriority) {
+      existing.title = seed.title;
+      existing.titlePriority = seed.titlePriority;
+      existing.titleRef = seed.titleRef;
+      existing.titleUrl = seed.titleUrl;
+    } else if (seed?.titleRef && !existing.titleRef) {
+      existing.titleRef = seed.titleRef;
+      existing.titleUrl = seed.titleUrl;
     }
   }
 
@@ -243,22 +558,17 @@ export function buildFallbackSummary(input: {
       items: dedupeGroupItems(group.items).sort((left, right) => left.createdAt - right.createdAt),
     }))
     .filter((group) => group.items.length)
-    .sort((left, right) => left.sortAt - right.sortAt);
-
-  const nextUpLines = dedupeOrderedLines(
-    orderedGroups.flatMap((group) => {
-      const inProgressItems = group.items.filter((item) => item.inProgress);
-      if (!inProgressItems.length) {
-        return [];
+    .sort((left, right) => {
+      if (left.key === "other" && right.key !== "other") {
+        return 1;
       }
 
-      if (group.key !== "other") {
-        return [group.title];
+      if (right.key === "other" && left.key !== "other") {
+        return -1;
       }
 
-      return inProgressItems.map((item) => item.text);
-    }),
-  ).map((line) => truncateLine(line));
+      return left.sortAt - right.sortAt;
+    });
 
   const blockerLines = dedupeOrderedLines(input.blockers.map((entry) => truncateLine(entry.content)));
 
@@ -273,15 +583,8 @@ export function buildFallbackSummary(input: {
       lines.push(`- ${titleLine}`);
 
       for (const item of group.items) {
-        lines.push(`  - ${formatBulletText(item)}`);
+        lines.push(`  - ${formatBulletText(item, group.title)}`);
       }
-    }
-  }
-
-  if (nextUpLines.length) {
-    lines.push("", "Next up:");
-    for (const line of nextUpLines) {
-      lines.push(`- ${line}`);
     }
   }
 

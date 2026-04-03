@@ -68,3 +68,38 @@ test("fallback summary prefers PR titles as the ticket heading when PRs exist", 
   assert.ok(summary);
   assert.match(summary!, /- LYR-9 - PlayTest snake game \[ref:pr_42]/);
 });
+
+test("fallback summary groups unticketed repo work under the only PR title for that repo", () => {
+  const summary = buildFallbackSummary({
+    updateNo: 1,
+    period: "today",
+    entries: [
+      makeEntry({
+        id: "pr-1",
+        source: EntrySource.github_pr,
+        title: "Add weapon arsenal, enemy health bars, pickups, combos, and wave banners",
+        content:
+          "PR updated in readmeio/testing-repo: Add weapon arsenal, enemy health bars, pickups, combos, and wave banners",
+        externalId: "github-pr:readmeio/testing-repo:52:updated:2026-04-02T10:00:00.000Z",
+        externalUrl: "https://github.com/readmeio/testing-repo/pull/52",
+        createdAt: new Date("2026-04-02T10:00:00.000Z"),
+      }),
+      makeEntry({
+        id: "commit-1",
+        source: EntrySource.github_commit,
+        title: "Add 3D FPS shooter game with Three.js rendering",
+        content: "Commit to readmeio/testing-repo: Add 3D FPS shooter game with Three.js rendering",
+        externalId: "github-commit:readmeio/testing-repo:abcdef123456",
+        externalUrl: "https://github.com/readmeio/testing-repo/commit/abcdef123456",
+        createdAt: new Date("2026-04-02T11:00:00.000Z"),
+      }),
+    ],
+    blockers: [],
+  }).summary;
+
+  assert.ok(summary);
+  assert.match(summary!, /- Add weapon arsenal, enemy health bars, pickups, combos, and wave banners \[ref:pr_52]/);
+  assert.match(summary!, /  - Updated PR \[ref:pr_52]/);
+  assert.match(summary!, /  - Add 3D FPS shooter game with Three\.js rendering \[ref:commit_readmeio_testing_repo_abcdef123456]/);
+  assert.doesNotMatch(summary!, /- Other/);
+});

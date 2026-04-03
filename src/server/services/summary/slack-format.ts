@@ -71,9 +71,22 @@ type ParsedSummaryGroup = {
   items: SummaryGroupLine[];
 };
 
+type ParsedSummaryStructure = {
+  header: string[];
+  statusSnapshot: SummaryGroupLine[];
+  groups: ParsedSummaryGroup[];
+  needsReview: SummaryGroupLine[];
+  blockers: string[];
+};
+
 type ResolvedGroupLink = {
   url: string;
   source: SummaryLogEntry["source"] | "compare";
+};
+
+type ReviewNeededPullRequest = {
+  text: string;
+  url: string;
 };
 
 function normalizeText(value: string) {
@@ -291,6 +304,223 @@ function escapeSlackLinkText(text: string) {
     .replace(/\|/g, "¦");
 }
 
+function escapeSlackText(text: string) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function renderSectionTitle(text: string) {
+  return `*${escapeSlackText(text)}*`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : null;
+}
+
+function readGithubPrMetadata(entry: SummaryLogEntry) {
+  if (entry.source !== EntrySource.github_pr || !isRecord(entry.metadata)) {
+    return null;
+  }
+
+  const githubPrValue = entry.metadata.githubPr ?? entry.metadata.github_pr;
+  if (!isRecord(githubPrValue)) {
+    return null;
+  }
+
+  const stateValue = readString(githubPrValue.state);
+  const state = stateValue === "open" || stateValue === "closed" ? stateValue : null;
+
+  return {
+    state,
+    draft: readBoolean(githubPrValue.draft) ?? false,
+    awaitingReview: readBoolean(githubPrValue.awaitingReview),
+  };
+}
+
+function getPullRequestStatus(entry: SummaryLogEntry) {
+  if (entry.source !== EntrySource.github_pr) {
+    return null;
+  }
+
+  if (/^PR merged\b/i.test(entry.content) || /:merged:/i.test(entry.externalId ?? "")) {
+    return "merged" as const;
+  }
+
+  if (/^PR closed\b/i.test(entry.content) || /:closed:/i.test(entry.externalId ?? "")) {
+    return "closed" as const;
+  }
+
+  const metadata = readGithubPrMetadata(entry);
+  if (metadata?.state === "closed") {
+    return "closed" as const;
+  }
+
+  return "open" as const;
+}
+
+function isPullRequestAwaitingReview(entry: SummaryLogEntry) {
+  if (entry.source !== EntrySource.github_pr || !entry.externalUrl) {
+    return false;
+  }
+
+  if (getPullRequestStatus(entry) !== "open") {
+    return false;
+  }
+
+  const metadata = readGithubPrMetadata(entry);
+  if (metadata?.draft) {
+    return false;
+  }
+
+  if (typeof metadata?.awaitingReview === "boolean") {
+    return metadata.awaitingReview;
+  }
+
+  return true;
+}
+
+function buildLatestPullRequests(entries: SummaryLogEntry[]) {
+  const latestByKey = new Map<string, SummaryLogEntry>();
+
+  for (const entry of entries) {
+    if (entry.source !== EntrySource.github_pr) {
+      continue;
+    }
+
+    const key = entry.externalUrl ?? entry.externalId ?? entry.id;
+    const existing = latestByKey.get(key);
+    if (!existing || entry.createdAt.getTime() >= existing.createdAt.getTime()) {
+      latestByKey.set(key, entry);
+    }
+  }
+
+  return [...latestByKey.values()].sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return count === 1 ? singular : plural;
+}
+
+function joinNaturalLanguage(parts: string[]) {
+  if (parts.length <= 1) {
+    return parts[0] ?? "";
+  }
+
+  if (parts.length === 2) {
+    return `${parts[0]} and ${parts[1]}`;
+  }
+
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
+}
+
+function trimTrailingPeriod(value: string) {
+  return value.replace(/\.+$/g, "").trim();
+}
+
+function formatTitleList(titles: string[], limit = 3) {
+  const unique = titles.filter((title, index) => titles.findIndex((candidate) => normalizeText(candidate) === normalizeText(title)) === index);
+  const visible = unique.slice(0, limit).map((title) => trimTrailingPeriod(title));
+
+  if (unique.length > limit && visible.length) {
+    const remaining = unique.length - limit;
+    return `${joinNaturalLanguage(visible)}, and ${remaining} more`;
+  }
+
+  return joinNaturalLanguage(visible);
+}
+
+function formatNeedsReviewTitle(entry: SummaryLogEntry, hasMultipleRepos: boolean) {
+  const ticket = getEntryTicket(entry);
+  const rawTitle = entry.title?.trim()
+    || entry.content.replace(/^PR\s+.+?\s+in\s+[^:]+:\s*/i, "").trim()
+    || "Open PR";
+  const cleanedTitle = stripTicketPrefix(rawTitle, ticket);
+  const normalizedTitle = ticket && cleanedTitle ? `${ticket} - ${cleanedTitle}` : rawTitle;
+
+  if (hasMultipleRepos && !ticket && entry.project?.githubRepo) {
+    return truncateLine(`[${entry.project.githubRepo}] ${normalizedTitle}`);
+  }
+
+  return truncateLine(normalizedTitle);
+}
+
+function buildNeedsReviewItems(entries: SummaryLogEntry[]) {
+  const latestPullRequests = buildLatestPullRequests(entries);
+  const repoCount = new Set(
+    latestPullRequests
+      .map((entry) => entry.project?.githubRepo ?? null)
+      .filter((repo): repo is string => Boolean(repo)),
+  ).size;
+  const hasMultipleRepos = repoCount > 1;
+
+  return latestPullRequests
+    .filter((entry) => isPullRequestAwaitingReview(entry) && Boolean(entry.externalUrl))
+    .map((entry) => ({
+      text: formatNeedsReviewTitle(entry, hasMultipleRepos),
+      url: entry.externalUrl as string,
+    }));
+}
+
+function buildStatusSnapshotLines(
+  structure: ParsedSummaryStructure,
+  entries: SummaryLogEntry[],
+  needsReviewItems: ReviewNeededPullRequest[],
+) {
+  const explicitLines = structure.statusSnapshot
+    .map((line) => line.text.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  if (explicitLines.length) {
+    return explicitLines;
+  }
+
+  const lines: string[] = [];
+  const ticketGroups = structure.groups.filter((group) => !isOtherGroupTitle(group.title));
+  if (ticketGroups.length) {
+    const groupLabel = pluralize(ticketGroups.length, "ticketed workstream");
+    const titleList = formatTitleList(ticketGroups.map((group) => group.title));
+    lines.push(`Advanced ${ticketGroups.length} ${groupLabel}: ${titleList}.`);
+  } else if (structure.groups.some((group) => isOtherGroupTitle(group.title))) {
+    lines.push("Captured progress across miscellaneous work.");
+  }
+
+  const latestPullRequests = buildLatestPullRequests(entries);
+  const mergedPrCount = latestPullRequests.filter((entry) => getPullRequestStatus(entry) === "merged").length;
+  const commitCount = new Set(
+    entries
+      .filter((entry) => entry.source === EntrySource.github_commit)
+      .map((entry) => entry.externalUrl ?? entry.externalId ?? entry.id),
+  ).size;
+  const githubParts: string[] = [];
+  if (mergedPrCount) {
+    githubParts.push(`${mergedPrCount} merged ${pluralize(mergedPrCount, "PR")}`);
+  }
+  if (commitCount) {
+    githubParts.push(`${commitCount} ${pluralize(commitCount, "commit")}`);
+  }
+  if (githubParts.length) {
+    lines.push(`GitHub activity included ${joinNaturalLanguage(githubParts)}.`);
+  }
+
+  if (needsReviewItems.length) {
+    lines.push(`${needsReviewItems.length} ${pluralize(needsReviewItems.length, "PR")} ${needsReviewItems.length === 1 ? "is" : "are"} waiting on review.`);
+  } else if (structure.blockers.length) {
+    lines.push(`${structure.blockers.length} ${pluralize(structure.blockers.length, "blocker")} ${structure.blockers.length === 1 ? "remains" : "remain"} open.`);
+  }
+
+  return lines.slice(0, 3);
+}
+
 function buildExactCandidates(
   refs: string[],
   candidatesByRef: Map<string, LinkCandidate>,
@@ -463,10 +693,111 @@ function buildVisibleGroupItems(
   return isOtherGroupTitle(group.title) ? generatedItems.slice(0, OTHER_VISIBLE_LIMIT) : generatedItems;
 }
 
-function parseSummaryStructure(summary: string) {
+const SECTION_HEADING_PATTERN = /^##\s+(.+?)\s*$/i;
+
+function getSectionKind(title: string) {
+  const normalizedTitle = normalizeText(title);
+
+  if (normalizedTitle === "status snapshot") {
+    return "status_snapshot" as const;
+  }
+
+  if (normalizedTitle === "needs review") {
+    return "needs_review" as const;
+  }
+
+  if (normalizedTitle === "blockers") {
+    return "blockers" as const;
+  }
+
+  return "group" as const;
+}
+
+function parseSectionedSummaryStructure(summary: string): ParsedSummaryStructure {
+  const header: string[] = [];
+  const statusSnapshot: SummaryGroupLine[] = [];
+  const groups: ParsedSummaryGroup[] = [];
+  const needsReview: SummaryGroupLine[] = [];
+  const blockers: string[] = [];
+  let section: "header" | "status_snapshot" | "group" | "needs_review" | "blockers" = "header";
+  let currentGroup: ParsedSummaryGroup | null = null;
+
+  for (const rawLine of summary.split("\n")) {
+    const refs = extractRefs(rawLine);
+    const cleanedLine = stripRefs(rawLine);
+    const trimmed = cleanedLine.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    const headingMatch = trimmed.match(SECTION_HEADING_PATTERN);
+    if (headingMatch?.[1]) {
+      if (currentGroup) {
+        groups.push(currentGroup);
+        currentGroup = null;
+      }
+
+      const title = headingMatch[1].trim();
+      const sectionKind = getSectionKind(title);
+
+      if (sectionKind === "group") {
+        currentGroup = {
+          title,
+          titleRefs: refs,
+          items: [],
+        };
+        section = "group";
+      } else {
+        section = sectionKind;
+      }
+      continue;
+    }
+
+    if (section === "header") {
+      header.push(trimmed);
+      continue;
+    }
+
+    if (!TOP_LEVEL_BULLET_PATTERN.test(cleanedLine)) {
+      continue;
+    }
+
+    const text = trimmed.replace(TOP_LEVEL_BULLET_PATTERN, "").trim();
+    if (!text) {
+      continue;
+    }
+
+    if (section === "status_snapshot") {
+      statusSnapshot.push({ text, refs });
+      continue;
+    }
+
+    if (section === "group" && currentGroup) {
+      currentGroup.items.push({ text, refs });
+      continue;
+    }
+
+    if (section === "needs_review") {
+      needsReview.push({ text, refs });
+      continue;
+    }
+
+    if (section === "blockers") {
+      blockers.push(text);
+    }
+  }
+
+  if (currentGroup) {
+    groups.push(currentGroup);
+  }
+
+  return { header, statusSnapshot, groups, needsReview, blockers };
+}
+
+function parseLegacySummaryStructure(summary: string): ParsedSummaryStructure {
   const header: string[] = [];
   const groups: ParsedSummaryGroup[] = [];
-  const nextUp: string[] = [];
   const blockers: string[] = [];
   let section: "header" | "groups" | "next_up" | "blockers" = "header";
   let currentGroup: ParsedSummaryGroup | null = null;
@@ -529,11 +860,6 @@ function parseSummaryStructure(summary: string) {
       continue;
     }
 
-    if (section === "next_up" && TOP_LEVEL_BULLET_PATTERN.test(cleanedLine)) {
-      nextUp.push(trimmed.replace(TOP_LEVEL_BULLET_PATTERN, "").trim());
-      continue;
-    }
-
     if (section === "blockers" && TOP_LEVEL_BULLET_PATTERN.test(cleanedLine)) {
       blockers.push(trimmed.replace(TOP_LEVEL_BULLET_PATTERN, "").trim());
     }
@@ -543,7 +869,23 @@ function parseSummaryStructure(summary: string) {
     groups.push(currentGroup);
   }
 
-  return { header, groups, nextUp, blockers };
+  return {
+    header,
+    statusSnapshot: [],
+    groups,
+    needsReview: [],
+    blockers,
+  };
+}
+
+function parseSummaryStructure(summary: string) {
+  const hasSectionHeadings = summary
+    .split("\n")
+    .some((line) => SECTION_HEADING_PATTERN.test(stripRefs(line).trim()));
+
+  return hasSectionHeadings
+    ? parseSectionedSummaryStructure(summary)
+    : parseLegacySummaryStructure(summary);
 }
 
 function resolveGroupEntries(
@@ -688,18 +1030,42 @@ function chooseSecondaryGroupLink(
 
 function getSecondaryLinkLabel(link: ResolvedGroupLink) {
   if (link.source === EntrySource.github_pr) {
-    return "link to PR";
+    return "PR";
   }
 
   if (link.source === "compare") {
-    return "link to commits";
+    return "Compare";
   }
 
   if (link.source === EntrySource.github_commit) {
-    return "link to commit";
+    return "Commit";
   }
 
-  return "link";
+  return "Link";
+}
+
+function getPrimaryLinkLabel(link: ResolvedGroupLink) {
+  if (link.source === EntrySource.linear_issue) {
+    return "Linear";
+  }
+
+  if (link.source === EntrySource.github_pr) {
+    return "PR";
+  }
+
+  if (link.source === EntrySource.github_commit) {
+    return "Commit";
+  }
+
+  if (link.source === "compare") {
+    return "Compare";
+  }
+
+  return "Link";
+}
+
+function formatVisibleLinkLine(label: string, url: string) {
+  return `- ${label}: ${url}`;
 }
 
 export function isStructuredTicketSummary(summary: string) {
@@ -717,7 +1083,61 @@ export function isStructuredTicketSummary(summary: string) {
     return false;
   }
 
-  return lines.some((line) => TOP_LEVEL_BULLET_PATTERN.test(line));
+  if (lines.some((line) => TOP_LEVEL_BULLET_PATTERN.test(line))) {
+    return true;
+  }
+
+  return lines.some((line) => {
+    const headingMatch = line.match(SECTION_HEADING_PATTERN);
+    if (!headingMatch?.[1]) {
+      return false;
+    }
+
+    return getSectionKind(headingMatch[1]) === "group";
+  });
+}
+
+export function hasStructuredNonOtherGroup(summary: string) {
+  const structure = parseSummaryStructure(summary);
+  return structure.groups.some((group) => !isOtherGroupTitle(group.title));
+}
+
+function buildExplicitNeedsReviewItems(
+  lines: SummaryGroupLine[],
+  candidates: LinkCandidate[],
+  candidatesByRef: Map<string, LinkCandidate>,
+) {
+  const prCandidates = candidates.filter((candidate) => candidate.source === EntrySource.github_pr);
+  const seen = new Set<string>();
+  const items: ReviewNeededPullRequest[] = [];
+
+  for (const line of lines) {
+    const exactCandidate = buildExactCandidates(line.refs, candidatesByRef, "item")
+      .find((candidate) => candidate.source === EntrySource.github_pr) ?? null;
+    const matchedCandidate = exactCandidate ?? findCandidate(line.text, prCandidates, "item");
+    const url = matchedCandidate?.url ?? null;
+    const key = `${normalizeText(line.text)}|${url ?? ""}`;
+
+    if (!line.text || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    if (url) {
+      items.push({ text: line.text, url });
+      continue;
+    }
+
+    items.push({ text: line.text, url: "" });
+  }
+
+  return items;
+}
+
+function orderGroupsForRender(groups: ParsedSummaryGroup[]) {
+  const ticketGroups = groups.filter((group) => !isOtherGroupTitle(group.title));
+  const otherGroups = groups.filter((group) => isOtherGroupTitle(group.title));
+  return [...ticketGroups, ...otherGroups];
 }
 
 export function renderSummaryForSlack(summary: string, entries: SummaryLogEntry[]) {
@@ -730,14 +1150,22 @@ export function renderSummaryForSlack(summary: string, entries: SummaryLogEntry[
   const structure = parseSummaryStructure(summary);
   const output: string[] = [];
   const assignedEntryIds = new Set<string>();
+  const derivedNeedsReviewItems = buildNeedsReviewItems(entries);
+  const needsReviewItems = derivedNeedsReviewItems.length
+    ? derivedNeedsReviewItems
+    : buildExplicitNeedsReviewItems(structure.needsReview, candidates, candidatesByRef);
+  const statusSnapshotLines = buildStatusSnapshotLines(structure, entries, needsReviewItems);
 
   output.push(...structure.header);
 
-  if (structure.header.length && structure.groups.length) {
-    output.push("");
+  if (statusSnapshotLines.length) {
+    output.push("", renderSectionTitle("Status snapshot"));
+    for (const line of statusSnapshotLines) {
+      output.push(`- ${line}`);
+    }
   }
 
-  for (const group of structure.groups) {
+  for (const group of orderGroupsForRender(structure.groups)) {
     const matchedEntries = isOtherGroupTitle(group.title)
       ? entries.filter((entry) => !assignedEntryIds.has(entry.id))
       : resolveGroupEntries(group, entries, candidates, candidatesByRef);
@@ -753,32 +1181,36 @@ export function renderSummaryForSlack(summary: string, entries: SummaryLogEntry[
       matchedEntries.forEach((entry) => assignedEntryIds.add(entry.id));
     }
 
-    const titleLine =
-      primaryLink && !hasExistingLink(group.title)
-        ? `• <${primaryLink.url}|${escapeSlackLinkText(group.title)}>`
-        : `• ${group.title}`;
-    output.push(titleLine);
+    output.push("", renderSectionTitle(group.title));
 
     for (const item of visibleItems) {
-      output.push(`  ◦ ${item}`);
+      output.push(`- ${item}`);
+    }
+
+    if (primaryLink) {
+      output.push(formatVisibleLinkLine(getPrimaryLinkLabel(primaryLink), primaryLink.url));
     }
 
     if (secondaryLink) {
-      output.push(`    ↳ <${secondaryLink.url}|${getSecondaryLinkLabel(secondaryLink)}>`);
+      output.push(formatVisibleLinkLine(getSecondaryLinkLabel(secondaryLink), secondaryLink.url));
     }
   }
 
-  if (structure.nextUp.length) {
-    output.push("", "Next up:");
-    for (const line of structure.nextUp) {
-      output.push(`• ${line}`);
+  if (needsReviewItems.length) {
+    output.push("", renderSectionTitle("Needs review"));
+    for (const line of needsReviewItems) {
+      if (line.url) {
+        output.push(`- ${line.text}: ${line.url}`);
+      } else {
+        output.push(`- ${line.text}`);
+      }
     }
   }
 
   if (structure.blockers.length) {
-    output.push("", "Blockers:");
+    output.push("", renderSectionTitle("Blockers"));
     for (const line of structure.blockers) {
-      output.push(`• ${line}`);
+      output.push(`- ${line}`);
     }
   }
 

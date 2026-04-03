@@ -46,6 +46,10 @@ test("isStructuredTicketSummary validates the new grouped format", () => {
     isStructuredTicketSummary("Weekly update :male-technologist::\n\n- RM-1 - Example"),
     true,
   );
+  assert.equal(
+    isStructuredTicketSummary("Weekly update :male-technologist::\n\n## Status snapshot\n- Wrapped up API work.\n\n## RM-1 - Example\n- Landed the fix."),
+    true,
+  );
   assert.equal(isStructuredTicketSummary("Update #1\nToday's work:\n- Something"), false);
 });
 
@@ -63,8 +67,8 @@ test("renderSummaryForSlack links ticket titles to Linear and uses one PR footer
       id: "pr-1",
       source: EntrySource.github_pr,
       title: "RM-15476 MCP revamp",
-      content: "PR reviewed in readmeio/readme: RM-15476 MCP revamp",
-      externalId: "github-pr:17883:reviewed",
+      content: "PR merged in readmeio/readme: RM-15476 MCP revamp",
+      externalId: "github-pr:readmeio/readme:17883:merged:2026-04-02T09:30:00.000Z",
       externalUrl: "https://github.com/readmeio/readme/pull/17883",
     }),
     makeEntry({
@@ -95,14 +99,18 @@ test("renderSummaryForSlack links ticket titles to Linear and uses one PR footer
 
   assert.match(
     rendered,
-    /• <https:\/\/linear\.app\/readme\/issue\/RM-15476\|RM-15476 - MCP Dropdown Reliability>/,
+    /\*Status snapshot\*/,
   );
-  assert.match(rendered, /◦ Reviewed and approved the MCP revamp PR\./);
-  assert.doesNotMatch(rendered, /\|Reviewed and approved the MCP revamp PR\./);
-  assert.match(rendered, /    ↳ <https:\/\/github\.com\/readmeio\/readme\/pull\/17883\|link to PR>/);
-  assert.doesNotMatch(rendered, /commit/);
-  assert.match(rendered, /• Other/);
-  assert.match(rendered, /Next up:\n• Finish manual tests\./);
+  assert.match(
+    rendered,
+    /\*RM-15476 - MCP Dropdown Reliability\*/,
+  );
+  assert.match(rendered, /- Reviewed and approved the MCP revamp PR\./);
+  assert.match(rendered, /- Linear: https:\/\/linear\.app\/readme\/issue\/RM-15476/);
+  assert.match(rendered, /- PR: https:\/\/github\.com\/readmeio\/readme\/pull\/17883/);
+  assert.doesNotMatch(rendered, /https:\/\/github\.com\/readmeio\/readme\/commit\//);
+  assert.match(rendered, /\*Other\*/);
+  assert.doesNotMatch(rendered, /Next up:/);
 });
 
 test("renderSummaryForSlack uses a single compare footer link for commit-only work", () => {
@@ -138,16 +146,13 @@ test("renderSummaryForSlack uses a single compare footer link for commit-only wo
     entries,
   );
 
-  assert.match(rendered, /• LYR-8 Create new repo for Snake game webapp/);
-  assert.match(rendered, /◦ Added HTML structure and CSS styling\./);
-  assert.match(rendered, /◦ Added core snake game logic with rendering\./);
+  assert.match(rendered, /\*Status snapshot\*/);
+  assert.match(rendered, /\*LYR-8 Create new repo for Snake game webapp\*/);
+  assert.match(rendered, /- Added HTML structure and CSS styling\./);
+  assert.match(rendered, /- Added core snake game logic with rendering\./);
   assert.match(
     rendered,
-    /    ↳ <https:\/\/github\.com\/readmeio\/readme\/compare\/abcdef1234567\.\.fedcba7654321\|link to commits>/,
-  );
-  assert.doesNotMatch(
-    rendered,
-    /• <https:\/\/github\.com\/readmeio\/readme\/compare\/abcdef1234567\.\.fedcba7654321\|LYR-8 Create new repo for Snake game webapp>/,
+    /- Compare: https:\/\/github\.com\/readmeio\/readme\/compare\/abcdef1234567\.\.fedcba7654321/,
   );
   assert.doesNotMatch(rendered, /\|commit>/);
 });
@@ -183,12 +188,12 @@ test("renderSummaryForSlack backfills nested bullets when a ticket heading is em
     entries,
   );
 
-  assert.match(rendered, /• LYR-9 PlayTest snake game/);
-  assert.match(rendered, /◦ Add mobile touch controls and responsive layout/);
-  assert.match(rendered, /◦ Add pause functionality and sound effects/);
+  assert.match(rendered, /\*LYR-9 PlayTest snake game\*/);
+  assert.match(rendered, /- Add mobile touch controls and responsive layout/);
+  assert.match(rendered, /- Add pause functionality and sound effects/);
   assert.match(
     rendered,
-    /    ↳ <https:\/\/github\.com\/readmeio\/readme\/compare\/1111111111111\.\.2222222222222\|link to commits>/,
+    /- Compare: https:\/\/github\.com\/readmeio\/readme\/compare\/1111111111111\.\.2222222222222/,
   );
 });
 
@@ -225,10 +230,11 @@ test("renderSummaryForSlack does not repeat a PR link under a PR-linked title", 
 
   assert.match(
     rendered,
-    /• <https:\/\/github\.com\/readmeio\/readme\/pull\/20001\|GitHub PR: Add game switcher and Tetris game>/,
+    /\*GitHub PR: Add game switcher and Tetris game\*/,
   );
-  assert.match(rendered, /◦ Refactor into game-switcher architecture with tab navigation\./);
-  assert.doesNotMatch(rendered, /↳/);
+  assert.match(rendered, /- Refactor into game-switcher architecture with tab navigation\./);
+  assert.doesNotMatch(rendered, /- Compare:/);
+  assert.match(rendered, /- PR: https:\/\/github\.com\/readmeio\/readme\/pull\/20001/);
 });
 
 test("renderSummaryForSlack limits Other to five visible updates", () => {
@@ -247,7 +253,89 @@ test("renderSummaryForSlack limits Other to five visible updates", () => {
     [],
   );
 
-  assert.match(rendered, /◦ One/);
-  assert.match(rendered, /◦ Five/);
-  assert.doesNotMatch(rendered, /◦ Six/);
+  assert.match(rendered, /\*Other\*/);
+  assert.match(rendered, /- One/);
+  assert.match(rendered, /- Five/);
+  assert.doesNotMatch(rendered, /- Six/);
+});
+
+test("renderSummaryForSlack renders a needs review section for open PRs", () => {
+  const entries: SummaryLogEntry[] = [
+    makeEntry({
+      id: "pr-1",
+      source: EntrySource.github_pr,
+      title: "RM-200 Fix review callout",
+      content: "PR updated in readmeio/readme: RM-200 Fix review callout",
+      externalId: "github-pr:readmeio/readme:200:updated:2026-04-02T11:00:00.000Z",
+      externalUrl: "https://github.com/readmeio/readme/pull/200",
+      metadata: {
+        githubPr: {
+          number: 200,
+          state: "open",
+          draft: false,
+          awaitingReview: true,
+          reviewRequested: true,
+          requestedReviewerCount: 1,
+          requestedTeamCount: 0,
+        },
+      },
+      createdAt: new Date("2026-04-02T11:00:00.000Z"),
+    }),
+  ];
+
+  const rendered = renderSummaryForSlack(
+    [
+      "Weekly update :male-technologist::",
+      "",
+      "## Status snapshot",
+      "- Wrapped up the implementation and opened the PR.",
+      "",
+      "## RM-200 - Fix review callout [ref:pr_200]",
+      "- Finished the formatter changes. [ref:pr_200]",
+    ].join("\n"),
+    entries,
+  );
+
+  assert.match(rendered, /\*Needs review\*/);
+  assert.match(
+    rendered,
+    /- RM-200 - Fix review callout: https:\/\/github\.com\/readmeio\/readme\/pull\/200/,
+  );
+});
+
+test("renderSummaryForSlack does not add needs review for open PRs without a review request", () => {
+  const entries: SummaryLogEntry[] = [
+    makeEntry({
+      id: "pr-1",
+      source: EntrySource.github_pr,
+      title: "Draft follow-up",
+      content: "PR updated in readmeio/readme: Draft follow-up",
+      externalId: "github-pr:readmeio/readme:201:updated:2026-04-02T11:00:00.000Z",
+      externalUrl: "https://github.com/readmeio/readme/pull/201",
+      metadata: {
+        githubPr: {
+          number: 201,
+          state: "open",
+          draft: false,
+          awaitingReview: false,
+          reviewRequested: false,
+          requestedReviewerCount: 0,
+          requestedTeamCount: 0,
+        },
+      },
+      createdAt: new Date("2026-04-02T11:00:00.000Z"),
+    }),
+  ];
+
+  const rendered = renderSummaryForSlack(
+    [
+      "Daily update :male-technologist::",
+      "",
+      "## Draft follow-up [ref:pr_201]",
+      "- Continued implementation work.",
+    ].join("\n"),
+    entries,
+  );
+
+  assert.doesNotMatch(rendered, /\*Needs review\*/);
 });

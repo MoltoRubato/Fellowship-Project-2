@@ -1,9 +1,19 @@
 import type { SummaryLogEntry, SummaryPeriod, SummaryAnswer } from "./types";
 import { fetchGithubCommitDetails } from "@/server/services/integrations/github";
-import { parseCommitEntry, buildCommitPromptItems, buildTaskItems, buildBlockerItems } from "./task-processing";
+import {
+  parseCommitEntry,
+  buildCommitPromptItems,
+  buildTaskItems,
+  buildBlockerItems,
+  extractTicketIdentifier,
+} from "./task-processing";
 import { runAiSummary } from "./ai";
 import { buildFallbackSummary } from "./fallback";
-import { isStructuredTicketSummary, renderSummaryForSlack } from "./slack-format";
+import {
+  hasStructuredNonOtherGroup,
+  isStructuredTicketSummary,
+  renderSummaryForSlack,
+} from "./slack-format";
 import {
   containsSummaryPlaceholderValue,
   stripPlaceholderPhrases,
@@ -37,6 +47,16 @@ function sanitizeSummaryPlaceholders(summary: string) {
     })
     .join("\n")
     .replace(/\n{3,}/g, "\n\n");
+}
+
+function hasGroupableWork(entries: SummaryLogEntry[]) {
+  return entries.some((entry) => {
+    if (entry.source === "github_pr" || entry.source === "linear_issue") {
+      return true;
+    }
+
+    return Boolean(extractTicketIdentifier(entry.title ?? null, entry.content));
+  });
 }
 
 export function getSummaryWindow(period: SummaryPeriod) {
@@ -83,7 +103,11 @@ export async function generateStandupSummary(input: {
 
   if (aiResult?.summary) {
     const sanitizedSummary = sanitizeSummaryPlaceholders(aiResult.summary);
-    if (!isStructuredTicketSummary(sanitizedSummary)) {
+    const shouldFallback =
+      !isStructuredTicketSummary(sanitizedSummary) ||
+      (hasGroupableWork(input.entries) && !hasStructuredNonOtherGroup(sanitizedSummary));
+
+    if (shouldFallback) {
       const fallback = buildFallbackSummary({
         updateNo: input.updateNo,
         period: input.period,

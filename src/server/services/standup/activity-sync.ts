@@ -1,4 +1,4 @@
-import { EntrySource, EntryType } from "@prisma/client";
+import { EntrySource, EntryType, Prisma } from "@prisma/client";
 import { db } from "@/server/db";
 import { fetchGithubActivity } from "@/server/services/integrations/github";
 import { fetchLinearActivity } from "@/server/services/integrations/linear";
@@ -28,6 +28,7 @@ export async function syncConnectedActivity(
         source: item.source === "github_commit" ? EntrySource.github_commit : EntrySource.github_pr,
         externalId: item.externalId,
         externalUrl: item.externalUrl,
+        metadata: item.metadata as Prisma.InputJsonValue | undefined,
         createdAt: item.createdAt,
       });
 

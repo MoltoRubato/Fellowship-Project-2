@@ -1,3 +1,13 @@
+export interface GithubPullRequestMetadata {
+  number: number;
+  state: "open" | "closed";
+  draft: boolean;
+  awaitingReview: boolean;
+  reviewRequested: boolean;
+  requestedReviewerCount: number;
+  requestedTeamCount: number;
+}
+
 export interface GithubVisibleRepo {
   id: string;
   nameWithOwner: string;
@@ -22,6 +32,9 @@ export interface GithubActivityItem {
   source: "github_commit" | "github_pr";
   externalId: string;
   externalUrl?: string;
+  metadata?: {
+    githubPr?: GithubPullRequestMetadata;
+  };
   createdAt: Date;
 }
 
