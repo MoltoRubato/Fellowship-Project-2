@@ -304,6 +304,20 @@ export default function AuthPage() {
             username={dashboard?.github.username ?? null}
             warning={visibleWarnings.github}
             onDismissWarning={() => dismissWarning("github", githubWarning)}
+            hint={dashboard?.github.connected ? (
+              <>
+                If new orgs aren&apos;t listed,{" "}
+                <a
+                  href="https://github.com/settings/applications"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-[var(--text)]"
+                >
+                  revoke this app&apos;s access on GitHub
+                </a>
+                , re-authorize, then request access to the org, then authorise and grant access.
+              </>
+            ) : undefined}
             action={
               isInitialDashboardLoad ? (
                 <div aria-hidden="true" className={loadingActionClass} />

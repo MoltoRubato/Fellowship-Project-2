@@ -10,6 +10,7 @@ export function ProviderCard(props: {
   warning: string | null;
   onDismissWarning?: () => void;
   action: ReactNode;
+  hint?: ReactNode;
 }) {
   const statusLabel = props.loading
     ? "Checking connection"
@@ -53,8 +54,13 @@ export function ProviderCard(props: {
             {detailLabel}
           </p>
         </div>
-        <div className="shrink-0">{props.action}</div>
       </div>
+
+      <div className="mt-4">{props.action}</div>
+
+      {props.hint ? (
+        <p className="mt-2 text-xs text-[var(--muted)]">{props.hint}</p>
+      ) : null}
 
       {props.warning ? (
         <div
